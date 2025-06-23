@@ -57,15 +57,15 @@ fileInputArea <- function(inputId, label, multiple = FALSE, accept = NULL,
     style = htmltools::css(width = htmltools::validateCssUnit(width)),
     shiny:::shinyInputLabel(inputId, ""),
     div(
-      class = "input-group mb-3",
+      class = "input-group",
       # input-group-prepend is for bootstrap 4 compat
       tags$label(
         class = "input-group-btn input-group-prepend",
         span(
           class = "btn btn-area", inputTag,
-          div(tags$image(src = icon_encoded, width = "80px;"), style = "margin-top: 2rem;"),
-          div(p(label), style = "font-size: 1.2rem; font-weight: 700; padding-top: 2rem;"),
-          div(p(buttonLabel), style = "font-size: 1rem; font-weight: 400; margin-bottom: 2rem;")
+          div(tags$image(src = icon_encoded, width = "80px;"), style = "margin-top: 0rem;"),
+          div(p(label), style = "font-size: 1.2rem; font-weight: 700; padding-top: 0rem;"),
+          div(p(buttonLabel), style = "font-size: 1rem; font-weight: 400; margin-bottom: 0rem;")
         )
       )
     ),
@@ -154,30 +154,33 @@ card <- function(title, ...) {
 
 ui <- fluidPage(
   theme = bslib::bs_theme(version = 5),
-  includeCSS(css_btn_area),
+  includeCSS(css_btn_area), # Make sure css_btn_area is defined or loaded
   
   fluidRow(
-    column(width = 4, style = "height: 100vh; background-color: #f5f5f5; padding: 20px;", # Added padding here
+    # Left Column: Sidebar with explanation and card
+    column(width = 4,xs=12,sm=12,md=4,lg=4,xl=4, style = "background-color: #f5f5f5; padding: 20px;", 
            h2("Cálculo de Accesibilidad"),
            HTML(
              "<p>
-          La accesibilidad se calcula como el costo de traslado a un lugar de destino predefinido. Para obtenerlo, se considera:
-          <ul>
-            <li><strong>Vialidades carreteras</strong> en el estado, así como sus velocidades promedio.</li>
-            <li>Tipo de <strong>uso de suelo</strong>.</li>
-            <li>Modelo digital de <strong>elevación</strong>.</li>
-          </ul>
-          Un modelo de movilidad sobre grafos determina el costo mínimo de traslado (en minutos) desde cada punto del estado hacia el más cercano de los lugares destino.
-        </p>"
+             La accesibilidad se calcula como el costo de traslado a un lugar de destino predefinido. Para obtenerlo, se considera:
+             <ul>
+               <li><strong>Vialidades carreteras</strong> en el estado, así como sus velocidades promedio.</li>
+               <li>Tipo de <strong>uso de suelo</strong>.</li>
+               <li>Modelo digital de <strong>elevación</strong>.</li>
+             </ul>
+             Un modelo de movilidad sobre grafos determina el costo mínimo de traslado (en minutos) desde cada punto del estado hacia el más cercano de los lugares destino.
+           </p>"
            ),
+           
+           # Card for file input
            card(
              title = "Agrega las ubicaciones. Puedes seleccionar varios archivos o subir un archivo .rar",
-             full_screen = FALSE,
-             # Centering the content horizontally and vertically within the card's body
-             div(style = " display: flex; flex-direction: column; justify-content: center; align-items: center;",
+             # Removed full_screen as it's not a standard argument for card() based on your definition
+             
+             # Centering content and adding scroll if content overflows
+             div(style = "display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0px; overflow-y: auto;", # Added padding and overflow-y
                  fileInputArea(
                    inputId = "filemap",
-                   
                    label = "Arrastra o selecciona tus archivos .shp, .dbf, .shx, .prj, etc. aquí:",
                    buttonLabel = "Click para seleccionar archivos",
                    multiple = TRUE,
@@ -187,7 +190,9 @@ ui <- fluidPage(
              )
            )
     ),
-    column(width = 8, style = "height: 100vh;",
+    
+    # Right Column: Map
+    column(width = 8,xs=12,sm=12,md=8,lg=8,xl=8, style = "height: 100vh;", # Keep 100vh for the map column
            leafletOutput("map", height = "100%")
     )
   )
@@ -225,10 +230,13 @@ server <- function(input, output, session) {
   output$map <- renderLeaflet({
     req(df())
     if(is.na(st_crs(df()))){
-      df=st_set_crs(df(),value = )
+      df=st_set_crs(df(),value ="EPSG:4326" )
+      puntos = df
+    }else{
+      puntos = df()
     }
     
-    puntos = df()
+    
     puntos=puntos |> st_transform(st_crs(hidalgo))
     coordenadas = sf::st_coordinates(puntos)
     tiempo_zona = accCost(T.GC, coordenadas)

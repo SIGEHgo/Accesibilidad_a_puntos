@@ -1,13 +1,13 @@
 #install.packages(c('shiny','leaflet','leaflet.extras','viridis','leaflegend','leafem','archive','DT','sf','raster','gdistance'))
-install.packages('archive')
-install.packages('sf')
-install.packages('raster')
-install.packages('gdistance')
-install.packages('leaflet')
-install.packages('leaflet.extras')
-install.packages('leaflegend')
-install.packages('leafem')
-install.packages('viridis')
+# install.packages('archive')
+# install.packages('sf')
+# install.packages('raster')
+# install.packages('gdistance')
+# install.packages('leaflet')
+# install.packages('leaflet.extras')
+# install.packages('leaflegend')
+# install.packages('leafem')
+# install.packages('viridis')
 
 library(shiny)
 library(leaflet)
@@ -184,11 +184,12 @@ ui <- fluidPage(
                    label = "Arrastra o selecciona tus archivos .shp, .dbf, .shx, .prj, etc. aquí:",
                    buttonLabel = "Click para seleccionar archivos",
                    multiple = TRUE,
-                   accept = c('.shp', ".dbf", ".shx", ".sbx", ".sbn", ".prg", ".rar", ".zip")
+                   accept = c('.shp',".kml",".GeoJSON",".kmz", ".rar", ".zip")
                  ),
                  shiny::tableOutput("files")
              )
-           )
+           ),
+           downloadButton("downloadTiff", "Descargar TIFF")
     ),
     
     # Right Column: Map
@@ -201,7 +202,7 @@ ui <- fluidPage(
 rutina_crear_copias_temporales <- function(inputFiles) {
   temp_dir <- tempfile()
   dir.create(temp_dir)
-  if (!grepl("\\.(rar|zip)$", inputFiles$datapath[1], ignore.case = TRUE)) {
+  if (!grepl("\\.(rar|zip|kmz)$", inputFiles$datapath[1], ignore.case = TRUE)) {
     for (i in seq_along(inputFiles$name)) {
       file.copy(inputFiles$datapath[i], file.path(temp_dir, inputFiles$name[i]))
     }
@@ -218,16 +219,19 @@ server <- function(input, output, session) {
   df <- reactive({
     req(input$filemap)
     temp_dir <- rutina_crear_copias_temporales(input$filemap)
-    read_sf(list.files(temp_dir, pattern = "\\.shp$", full.names = TRUE))
+    shapes=list.files(temp_dir, pattern = "\\.shp$", full.names = TRUE)
+    kmls=list.files(temp_dir, pattern = "\\.kml$", full.names = TRUE)
+    geojsons=list.files(temp_dir, pattern = "\\.geojson$", full.names = TRUE)
+    para_leer=list(shapes,kmls,geojsons)[which.max(list(shapes,kmls,geojsons) |> lapply(length))]
+    if(which.max(list(shapes,kmls,geojsons) |> lapply(length))==1){
+      read_sf(para_leer) |> st_zm()
+    }
+    else{
+      st_read(para_leer)|> st_zm()
+    }
+    
   })
-  
-  
-  # Lista reactiva para almacenar filtros dinámicos
-  filters <- reactiveVal(list())
-  
-
-  # Mostrar mapa
-  output$map <- renderLeaflet({
+  tiempo_zona_p=reactive({
     req(df())
     if(is.na(st_crs(df()))){
       df=st_set_crs(df(),value ="EPSG:4326" )
@@ -235,15 +239,29 @@ server <- function(input, output, session) {
     }else{
       puntos = df()
     }
-    
-    
     puntos=puntos |> st_transform(st_crs(hidalgo))
     coordenadas = sf::st_coordinates(puntos)
-    tiempo_zona = accCost(T.GC, coordenadas)
-    raster::crs(tiempo_zona) = crs(hidalgo)
+    tiempo_zona_p = accCost(T.GC, coordenadas)
+    raster::crs(tiempo_zona_p) = crs(hidalgo)
+    tiempo_zona_p
+  })
+  
+  # Descargar TIFF
+  output$downloadTiff <- downloadHandler(
+    filename = function() {
+      paste0("mi_raster_shiny_", Sys.Date(), ".tif")
+    },
+    content = function(file) {
+      # Asegúrate de que el paquete `terra` esté instalado para `writeRaster`
+      writeRaster(tiempo_zona_p(), file, overwrite = TRUE)
+    }
+  )
 
+  # Mostrar mapa
+  output$map <- renderLeaflet({
+    req(tiempo_zona_p())
     ###Pendiente: Municipio de ubicación.
-    
+    tiempo_zona=tiempo_zona_p()
     tiempo_zona[is.infinite(tiempo_zona)] = NA
     tiempo_zona[tiempo_zona >= 300] = 300
     min_valor = raster::cellStats(tiempo_zona, stat = 'min')
@@ -254,19 +272,36 @@ server <- function(input, output, session) {
       domain = values(tiempo_zona),  
       na.color = "transparent"
     )
-    
-
+  print(colnames(df()))
+  #writeRaster(tiempo_zona,"A.tif")
     leaflet() |>
       addTiles() |> 
       addMarkers(data=df() |> st_cast("POINT") |> as("Spatial"), 
                  popup = ~paste0(
-                   "Nombre: <b>", nombre, "</b><br>",
-                   "Secretaría: <b>", scrtr_n, "</b><br>",
-                   "Dependencia: <b>", dpndnc_n, "</b><br>",
-                   "Nombre establecimiento: <b>", nmbr_st, "</b><br>",
-                   "Horario del establecimiento: <b>", horr_st, "</b>"
-                 ),
-                 label = ~nombre) |> 
+                   ifelse("Name" %in% colnames(df()),
+                          paste0("Nombre: <b>", Name, "</b><br>")
+                          ,""),
+                   ifelse("nombre" %in% colnames(df()),
+                          paste0("Nombre: <b>", nombre, "</b><br>")
+                          ,"")
+                   ,
+                   ifelse("scrtr_n" %in% colnames(df()),
+                          paste0("Secretaría: <b>", scrtr_n, "</b><br>")
+                          ,"")
+                   ,
+                   ifelse("dpndnc_n" %in% colnames(df()),
+                          paste0("Dependencia: <b>", dpndnc_n, "</b><br>")
+                          ,"")
+                   ,
+                   ifelse("nmbr_st" %in% colnames(df()),
+                          paste0("Nombre establecimiento: <b>", nmbr_st, "</b><br>")
+                          ,"")
+                   ,
+                   ifelse("horr_st" %in% colnames(df()),
+                          paste0("Horario del establecimiento: <b>", horr_st, "</b>")
+                          ,"")
+                   )
+                 ) |> 
       addRasterImage(x = tiempo_zona, colors = viridis::turbo(n = length(min_valor:max_valor), direction = -1, alpha = 0.5)) |> 
       addPolygons(data=municipios |> as("Spatial"),
                   label = municipios$NOM_MUN,fillColor = "gray",fillOpacity = 0.1,color = "white",weight = 1,opacity = 0.4,group = "Municipios") |> 
@@ -287,5 +322,3 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
-
-

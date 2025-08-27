@@ -213,9 +213,7 @@ rutina_crear_copias_temporales <- function(inputFiles) {
   return(temp_dir)
 }
 
-# Servidor ----
 server <- function(input, output, session) {
-  # Cargar shapefile
   df <- reactive({
     req(input$filemap)
     temp_dir <- rutina_crear_copias_temporales(input$filemap)
@@ -252,7 +250,6 @@ server <- function(input, output, session) {
       paste0("mi_raster_shiny_", Sys.Date(), ".tif")
     },
     content = function(file) {
-      # Asegúrate de que el paquete `terra` esté instalado para `writeRaster`
       writeRaster(tiempo_zona_p(), file, overwrite = TRUE)
     }
   )

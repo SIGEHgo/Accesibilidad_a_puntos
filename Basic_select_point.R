@@ -3,8 +3,11 @@ library(leaflet)
 library(bslib)
 library(sf)
 library(shinyjs)
+library(DT)
 
-mun = sf::read_sf("Accesibilidad/municipiosjair.shp")
+
+### Carga de previos
+source("Previos.R")
 
 ui <- page_sidebar(
   
@@ -50,7 +53,7 @@ ui <- page_sidebar(
     
     h4("Sitio seleccionado"),
     DTOutput("puntos"), # Mostrar los puntos guardados
-    actionButton(inputId = "borrar_puntos", label = "Eliminar puntos", class = "btn-danger")
+    actionButton(inputId = "borrar_puntos", label = "Eliminar punto", class = "btn-danger")
     ),
     leafletOutput("mapa", height = "100vh"),
 )
@@ -115,28 +118,29 @@ server <- function(input, output, session) {
     marcador_seleccionado = input$mapa_marker_click$id
     cat("Marcador seleccionado: ", marcador_seleccionado, " que tiene la clase de ", marcador_seleccionado |> class(), "\n")
     
+    cat("El que nos interesa: ", which(puntos()$id == as.integer(marcador_seleccionado)), "donde su clase es: ", which(puntos()$id == as.integer(marcador_seleccionado)) |>  class(), "\n")
+    fila_coincide = which(puntos()$id == as.integer(marcador_seleccionado))
+    
     # Seleccionar esa fila en la tabla
-    selectRows(dataTableProxy("puntos"), as.integer(marcador_seleccionado))
+    selectRows(dataTableProxy("puntos"), as.integer(fila_coincide))
   })
   
   ### Seleccionas fila entonces se selecciona marcador
   ### Todavia tiene errores que debo de verificar
-  # observeEvent(input$puntos_rows_selected, {
-  #   fila_seleccionada = input$puntos_rows_selected
-  #   cat("Fila seleccionada: ", fila_seleccionada, " que tiene la clase de ", class(fila_seleccionada), "\n")
-  #   
-  #   if (!is.null(fila_seleccionada) && length(fila_seleccionada) > 0) {
-  #     id_seleccionado = puntos()$id[fila_seleccionada]   ## Creo que esta mal pensar al rato con mas claridad
-  #     session$sendCustomMessage("simulateMarkerClick", list(id = as.character(id_seleccionado)))
-  #     
-  #     tabla_seleccion = puntos()
-  #     tabla_seleccion = tabla_seleccion[fila_seleccionada,]
-  #     
-  #     
-  #     leafletProxy("mapa") |> 
-  #       setView(lng = tabla_seleccion$longitud, lat = tabla_seleccion$latitud, zoom = 11)
-  #   }
-  # })
+  observeEvent(input$puntos_rows_selected, {
+    fila_seleccionada = input$puntos_rows_selected
+    cat("Fila seleccionada: ", fila_seleccionada, " que tiene la clase de ", class(fila_seleccionada), "\n")
+    
+    datos_fila = puntos()[fila_seleccionada, ]
+    fila_id = datos_fila$id
+    cat("Tenemos que Fila id es: ", fila_id)
+
+    if (!is.null(fila_id) && length(fila_id) > 0) {
+      session$sendCustomMessage("simulateMarkerClick", list(id = as.character(fila_id)))
+      leafletProxy("mapa") |>
+        setView(lng = datos_fila$longitud, lat = datos_fila$latitud, zoom = 11)
+    }
+  })
   
   
   
@@ -149,7 +153,7 @@ server <- function(input, output, session) {
     cat("Imprimiendo fila seleccionada id: ", seleccionado, " donde su clase es", seleccionado |>  class(), "\n")
     
     if (is.null(seleccionado) || length(seleccionado) == 0) {
-      showNotification("Selecciona una fila en la tabla antes de borrar.", type = "warning")
+      showNotification("Selecciona una fila en la tabla o un marcador en el mapa antes de borrar.", type = "warning")
       return()
     }
     

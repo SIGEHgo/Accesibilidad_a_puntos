@@ -20,6 +20,22 @@ ui <- page_sidebar(
     "
     )
   ),
+  tags$script(HTML("
+     Shiny.addCustomMessageHandler('simulateMarkerClick', function(data) {
+      console.log('simulateMarkerClick recibido con:', data);
+      var w = HTMLWidgets.find('#mapa');
+      if(!w) return;
+      var map = w.getMap();
+      map.eachLayer(function(layer){
+        if(layer.options && layer.options.layerId == data.id){
+          console.log('Layer detectado:', layer.options.layerId);
+          try { layer.fire('click'); }
+          catch(e) { console.warn('no se pudo disparar click en layer', e); }
+        }
+      });
+    });
+  ")),
+  
   
   
   sidebar = sidebar(
@@ -45,7 +61,7 @@ server <- function(input, output, session) {
   puntos = reactiveVal(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
   
   output$mapa <- renderLeaflet({
-    leaflet() |>
+    leaflet(options = leafletOptions(doubleClickZoom = FALSE)) |>
       addTiles() |>
       addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
                   label = paste0("Municipio: ", mun$NOM_MUN)
@@ -58,6 +74,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$mapa_click, {
     click = input$mapa_click
+    cat("Tenemos que nrow(puntos()) es: ", nrow(puntos()), "\n")
     id_unico = dplyr::if_else(condition = nrow(puntos()) == 0, true = 1, false = max(puntos()$id) + 1)
     nuevo = data.frame(id = id_unico, latitud = click$lat, longitud = click$lng)
     cat("Se ha hecho click en:", click$lat, click$lng, "\n")
@@ -73,12 +90,6 @@ server <- function(input, output, session) {
                    "Latitud: ", "<b>", nuevo$latitud |>  round(digits = 4), "</b>", "<br>", 
                    "Longitud: ", "<b>", nuevo$longitud |>  round(digits = 4), "</b>"
                    ) |> 
-                   lapply(FUN = function(x) { htmltools::HTML(x)}),
-                 popup = paste0(
-                   "ID: ", "<b>", nuevo$id, "</b>", "<br>", 
-                   "Latitud: ", "<b>", nuevo$latitud |>  round(digits = 4), "</b>", "<br>", 
-                   "Longitud: ", "<b>", nuevo$longitud |>  round(digits = 4), "</b>"
-                 ) |> 
                    lapply(FUN = function(x) { htmltools::HTML(x)})
                  )
   })
@@ -109,16 +120,23 @@ server <- function(input, output, session) {
   })
   
   ### Seleccionas fila entonces se selecciona marcador
-  observeEvent(input$mapa_marker_click, {
-    fila_seleccionada = input$puntos_rows_selected
-    cat("Marcador seleccionado: ", fila_seleccionada, " que tiene la clase de ", fila_seleccionada |> class(), "\n")
-    
-    tabla = puntos()
-    tabla = tabla |> 
-      dplyr::filter(id == is.integer(fila_seleccionada))
-    
-    # Pendiente como realizarlo
-  })
+  ### Todavia tiene errores que debo de verificar
+  # observeEvent(input$puntos_rows_selected, {
+  #   fila_seleccionada = input$puntos_rows_selected
+  #   cat("Fila seleccionada: ", fila_seleccionada, " que tiene la clase de ", class(fila_seleccionada), "\n")
+  #   
+  #   if (!is.null(fila_seleccionada) && length(fila_seleccionada) > 0) {
+  #     id_seleccionado = puntos()$id[fila_seleccionada]   ## Creo que esta mal pensar al rato con mas claridad
+  #     session$sendCustomMessage("simulateMarkerClick", list(id = as.character(id_seleccionado)))
+  #     
+  #     tabla_seleccion = puntos()
+  #     tabla_seleccion = tabla_seleccion[fila_seleccionada,]
+  #     
+  #     
+  #     leafletProxy("mapa") |> 
+  #       setView(lng = tabla_seleccion$longitud, lat = tabla_seleccion$latitud, zoom = 11)
+  #   }
+  # })
   
   
   
@@ -143,12 +161,6 @@ server <- function(input, output, session) {
       leafletProxy("mapa") |>  clearMarkers() |> 
         addMarkers(data = tabla, lng = tabla$longitud, lat = tabla$latitud, layerId = as.character(tabla$id), 
                    label = paste0(
-                     "ID: ", "<b>", tabla$id, "</b>", "<br>", 
-                     "Latitud: ", "<b>", tabla$latitud |>  round(digits = 4), "</b>", "<br>", 
-                     "Longitud: ", "<b>", tabla$longitud |>  round(digits = 4), "</b>"
-                   ) |> 
-                     lapply(FUN = function(x) { htmltools::HTML(x)}),
-                   popup = paste0(
                      "ID: ", "<b>", tabla$id, "</b>", "<br>", 
                      "Latitud: ", "<b>", tabla$latitud |>  round(digits = 4), "</b>", "<br>", 
                      "Longitud: ", "<b>", tabla$longitud |>  round(digits = 4), "</b>"

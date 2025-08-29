@@ -392,7 +392,7 @@ server <- function(input, output, session) {
   ##########################################
   ### Eliminar seleccionados en la tabla ###
   ##########################################
-  borrar_puntos_fun <- function() {
+  borrar_puntos_fun = function() {
     seleccionado = input$puntos_rows_selected
     cat("Imprimiendo fila seleccionada id: ", seleccionado, " donde su clase es", seleccionado |> class(), "\n")
     
@@ -420,12 +420,12 @@ server <- function(input, output, session) {
     }
   }
   
-  # Evento del boton solo lo mando a llamar
+  # Boton solo lo mando a llamar
   observeEvent(input$borrar_puntos, {
     borrar_puntos_fun()
   })
   
-  # Evento mando a llamar la funcion cuando pulso la tecla
+  # Mando a llamar la funcion cuando pulso la tecla
   observeEvent(input$delete_key, {
     borrar_puntos_fun()
   })

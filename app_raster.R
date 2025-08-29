@@ -5,6 +5,8 @@ library(sf)
 library(shinyjs)
 library(DT)
 library(archive)
+library(shinycssloaders)
+library(waiter)
 
 ### Carga de previos
 # source("Previos.R")
@@ -112,6 +114,7 @@ icon_encoded <- xfun::base64_uri(icon_file)
 
 ui <- page_sidebar(
   useShinyjs(),
+  useWaiter(),
   tags$style(
     HTML(
       "
@@ -137,6 +140,14 @@ ui <- page_sidebar(
           catch(e) { console.warn('no se pudo disparar click en layer', e); }
         }
       });
+    });
+  ")),
+  
+  tags$script(HTML("
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        Shiny.setInputValue('delete_key', new Date().getTime());
+      }
     });
   ")),
   
@@ -187,7 +198,7 @@ ui <- page_sidebar(
     actionButton(inputId = "accesibilidad", label = "Iniciar Accesibilidad", class = "btn btn-outline-success"),
     downloadButton(outputId = "downloadTiff", label = "Descargar TIFF", class = "btn btn-info"),
   ),
-  leafletOutput("mapa", height = "100vh"),
+  withSpinner(leafletOutput("mapa", height = "100vh"), type = 4, color = "#0dc5c1")
 )
 
 server <- function(input, output, session) {
@@ -229,6 +240,9 @@ server <- function(input, output, session) {
                     latitud = Y)
     
     datos = dplyr::bind_cols(datos, coordenadas)
+    datos = sf::st_drop_geometry(datos)
+    cat("Vamos imprimir datos cuando se cargan: ", "\n")
+    print(datos[, c((ncol(datos) -2), ncol(datos))])
     datos
   })
   
@@ -271,7 +285,6 @@ server <- function(input, output, session) {
   
   observe({
     req(datos())  # asegura que no sea NULL
-    
     if (nrow(datos()) == 0) {
       puntos(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
     } else {
@@ -310,9 +323,13 @@ server <- function(input, output, session) {
     id_unico = dplyr::if_else(condition = nrow(puntos()) == 0, true = 1, false = max(puntos()$id) + 1)
     nuevo = data.frame(id = id_unico, latitud = click$lat, longitud = click$lng)
     cat("Se ha hecho click en:", click$lat, click$lng, "\n")
+    cat("Vamos imprimir puntos sin hacer la union: ", "\n")
+    print(puntos())
     
     # Añadir pulsados
     puntos(dplyr::bind_rows(puntos(), nuevo))
+    cat("Vamos  a imprimir puntos cuando hace la union: ", "\n")
+    print(puntos())
     
     # Añadir al mapa
     leafletProxy("mapa") |>
@@ -375,10 +392,9 @@ server <- function(input, output, session) {
   ##########################################
   ### Eliminar seleccionados en la tabla ###
   ##########################################
-  observeEvent(input$borrar_puntos, {
-    
+  borrar_puntos_fun <- function() {
     seleccionado = input$puntos_rows_selected
-    cat("Imprimiendo fila seleccionada id: ", seleccionado, " donde su clase es", seleccionado |>  class(), "\n")
+    cat("Imprimiendo fila seleccionada id: ", seleccionado, " donde su clase es", seleccionado |> class(), "\n")
     
     if (is.null(seleccionado) || length(seleccionado) == 0) {
       showNotification("Selecciona una fila en la tabla o un marcador en el mapa antes de borrar.", type = "warning")
@@ -402,6 +418,16 @@ server <- function(input, output, session) {
     } else{
       leafletProxy("mapa") |>  clearMarkers()
     }
+  }
+  
+  # Evento del boton solo lo mando a llamar
+  observeEvent(input$borrar_puntos, {
+    borrar_puntos_fun()
+  })
+  
+  # Evento mando a llamar la funcion cuando pulso la tecla
+  observeEvent(input$delete_key, {
+    borrar_puntos_fun()
   })
   
   ##############################
@@ -413,11 +439,30 @@ server <- function(input, output, session) {
   # Hace accesibilidad
   observeEvent(input$accesibilidad, {
     req(puntos())
-    req(nrow(puntos()) > 0)
+    
+    if (is.null(puntos()) || length(puntos()) == 0 || nrow(puntos()) == 0) {
+      leafletProxy("mapa") |>  
+        clearImages() |> 
+        clearControls() 
+      
+      showNotification("Selecciona un punto en el mapa o sube un archivo.", type = "warning")
+      tiempo_zona_p(NULL)
+      return()  
+    }
+    
+  
+    
+    
+    
+    waiter_show(html = spin_fading_circles(), color = "rgba(255,255,255,0.8)")
     
     
     df = puntos()
+    print("Estamos imprimiendo el df como llega: ")
+    print(df)
     df = sf::st_as_sf(x = df, coords = c("longitud", "latitud"),crs = sf::st_crs(mun))
+    cat("Estamos imprimiendo el df luego de pasarlo a sf: ")
+    print(df)
     df = df |> st_transform(st_crs(hidalgo))
     coordenadas = sf::st_coordinates(df)
     print(coordenadas)
@@ -452,6 +497,7 @@ server <- function(input, output, session) {
                   suffix = " min",
                   transform = function(x) {x}
                 ))
+    waiter_hide()
   }) 
   
   # Descargar TIFF
@@ -460,6 +506,10 @@ server <- function(input, output, session) {
       paste0("mi_raster_shiny_", Sys.Date(), ".tif")
     },
     content = function(file) {
+      if (is.null(tiempo_zona_p())) {
+        showNotification("No se ha generado ningun TIFF.", type = "warning")
+        return()
+      }
       writeRaster(tiempo_zona_p(), file, overwrite = TRUE)
     }
   )

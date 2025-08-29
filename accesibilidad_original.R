@@ -5,7 +5,7 @@ pendiente=raster("Accesibilidad/pendiente.tif")
 carreteras=raster("Accesibilidad/carreteras.tif")
 
 
-slp_walk = 6 * exp(-3.5 * abs(tan(pendiente * pi / 180) + 0.05))  # Calcula la velocidad de caminata ajustada por la pendiente.
+slp_walk = 6 * exp(-0.5 * abs(tan(pendiente * pi / 180) + 0.05))  # Calcula la velocidad de caminata ajustada por la pendiente.
 terrain_walk_spd = uso_de_suelo * slp_walk# Calcula la velocidad sobre el terreno ajustada por la pendiente y el uso de suelo.
 slp_car = 6 * exp(-0.4 * abs(tan(pendiente * pi / 180) + 0.05))  #  Calcula la velocidad sobre carreteras ajustada por la pendiente.
 sloped_road_spd = (carreteras*0+1) * slp_car / 6 # Calcula la velocidad ajustada por pendiente para carreteras y la convierte en un raster

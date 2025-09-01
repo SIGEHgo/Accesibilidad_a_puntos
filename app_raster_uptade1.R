@@ -1,3 +1,26 @@
+###########################
+# Parche de actualizacion #
+###########################
+
+# Puntos solo se pueden colocar dentro de Hidalgo
+# Boton al mapa para centrar                      Aprobado por chayanne
+# Marcadores solo colocar en Hidalgo              Aprobado por chayanne   
+# Boton para subir otro archivo
+# Deslizador para tiempo maximo
+# Boton para limpiar el mapa
+# Boton de zoom a la derecha
+# Puntos y raster como capas
+
+
+
+
+
+
+
+
+
+
+
 library(shiny)
 library(leaflet)
 library(bslib)
@@ -7,6 +30,8 @@ library(DT)
 library(archive)
 library(shinycssloaders)
 library(waiter)
+library(leaflet.extras)
+library(leaflet.extras2)
 
 ### Carga de previos
 #source("Previos.R")
@@ -128,6 +153,8 @@ ui <- page_sidebar(
     "
     )
   ),
+  
+  # Buscador de capas en el mapa
   tags$script(HTML("
      Shiny.addCustomMessageHandler('simulateMarkerClick', function(data) {
       console.log('simulateMarkerClick recibido con:', data);
@@ -144,6 +171,7 @@ ui <- page_sidebar(
     });
   ")),
   
+  # Boton para eliminar un marcador
   tags$script(HTML("
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -176,7 +204,7 @@ ui <- page_sidebar(
            </p>"
     ),
     h4("Agrega las ubicaciones, al subir un archivo", id = "titulo_mensaje_subido"),
-      ### Añadir el archivo
+    ### Añadir el archivo
     card(
       id = "subir_archivo",
       # title = "Agrega las ubicaciones. Puedes seleccionar varios archivos o subir un archivo .rar",
@@ -195,9 +223,16 @@ ui <- page_sidebar(
     
     h4("Datos"),
     DTOutput("puntos"), # Mostrar los puntos guardados
-    actionButton(inputId = "borrar_puntos", label = "Eliminar punto", class = "btn btn-outline-danger"),
-    actionButton(inputId = "accesibilidad", label = "Iniciar Accesibilidad", class = "btn btn-outline-success"),
-    downloadButton(outputId = "downloadTiff", label = "Descargar TIFF", class = "btn btn-info"),
+    fluidRow(
+      column(width = 4, actionButton("borrar_puntos", "Eliminar punto", class = "btn btn-outline-danger")),
+      column(width = 4, actionButton("borrar_todo", "Limpiar tabla", class = "btn btn-outline-danger")),
+      column(width = 4, downloadButton(outputId = "downloadTabla", label = "Descargar Tabla", class = "btn btn-info"))
+    ),
+    fluidRow(
+      column(width = 4, numericInput(inputId = "slider", label = "Tiempo maximo",min = 30, max = 500, value = 300)),
+      column(width = 4, actionButton(inputId = "accesibilidad", label = "Accesibilidad", class = "btn btn-outline-success")),
+      column(width = 4, downloadButton(outputId = "downloadTiff", label = "Descargar TIFF", class = "btn btn-info"))
+    )
   ),
   withSpinner(leafletOutput("mapa", height = "100vh"), type = 4, color = "#0dc5c1")
 )
@@ -270,7 +305,7 @@ server <- function(input, output, session) {
   
   
   
-
+  
   
   # Mostrar el mapa sin nada
   output$mapa <- renderLeaflet({
@@ -278,7 +313,8 @@ server <- function(input, output, session) {
       addTiles() |>
       addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
                   label = paste0("Municipio: ", mun$NOM_MUN)
-      ) 
+      ) |> 
+      addResetMapButton()
   })
   
   # Inicializa siempre
@@ -320,28 +356,47 @@ server <- function(input, output, session) {
   
   observeEvent(input$mapa_click, {
     click = input$mapa_click
-    cat("Tenemos que nrow(puntos()) es: ", nrow(puntos()), "\n")
-    id_unico = dplyr::if_else(condition = nrow(puntos()) == 0, true = 1, false = max(puntos()$id) + 1)
-    nuevo = data.frame(id = id_unico, latitud = click$lat, longitud = click$lng)
-    cat("Se ha hecho click en:", click$lat, click$lng, "\n")
-    cat("Vamos imprimir puntos sin hacer la union: ", "\n")
-    print(puntos())
     
-    # Añadir pulsados
-    puntos(dplyr::bind_rows(puntos(), nuevo))
-    cat("Vamos  a imprimir puntos cuando hace la union: ", "\n")
-    print(puntos())
+    punto_click = sf::st_as_sf(
+      data.frame(lon = click$lng, lat = click$lat),
+      coords = c("lon", "lat"),
+      crs = sf::st_crs(mun) 
+    )
     
-    # Añadir al mapa
-    leafletProxy("mapa") |>
-      addMarkers(lng = nuevo$longitud, lat = nuevo$latitud, layerId = as.character(nuevo$id), 
-                 label = paste0(
-                   "ID: ", "<b>", nuevo$id, "</b>", "<br>", 
-                   "Latitud: ", "<b>", nuevo$latitud |>  round(digits = 4), "</b>", "<br>", 
-                   "Longitud: ", "<b>", nuevo$longitud |>  round(digits = 4), "</b>"
-                 ) |> 
-                   lapply(FUN = function(x) { htmltools::HTML(x)})
-      )
+    # Checar si esta dentro de Hidalgo
+    dentro = sf::st_intersects(x = punto_click, mun)
+    cat("Tenemoms que dentro es: ", "\n")
+    print(dentro)
+    
+    if (lengths(dentro) > 0) {
+      cat("Tenemos que nrow(puntos()) es: ", nrow(puntos()), "\n")
+      id_unico = dplyr::if_else(condition = nrow(puntos()) == 0, true = 1, false = max(puntos()$id) + 1)
+      nuevo = data.frame(id = id_unico, latitud = click$lat, longitud = click$lng)
+      cat("Se ha hecho click en:", click$lat, click$lng, "\n")
+      cat("Vamos imprimir puntos sin hacer la union: ", "\n")
+      print(puntos())
+      
+      # Añadir pulsados
+      puntos(dplyr::bind_rows(puntos(), nuevo))
+      cat("Vamos  a imprimir puntos cuando hace la union: ", "\n")
+      print(puntos())
+      
+      # Añadir al mapa
+      leafletProxy("mapa") |>
+        addMarkers(lng = nuevo$longitud, lat = nuevo$latitud, layerId = as.character(nuevo$id), 
+                   label = paste0(
+                     "ID: ", "<b>", nuevo$id, "</b>", "<br>", 
+                     "Latitud: ", "<b>", nuevo$latitud |>  round(digits = 4), "</b>", "<br>", 
+                     "Longitud: ", "<b>", nuevo$longitud |>  round(digits = 4), "</b>"
+                   ) |> 
+                     lapply(FUN = function(x) { htmltools::HTML(x)})
+        )
+    }else{
+      showNotification("El punto está fuera de Hidalgo", type = "error")
+    }
+    
+    
+    
   })
   
   
@@ -431,6 +486,21 @@ server <- function(input, output, session) {
     borrar_puntos_fun()
   })
   
+  
+  #####################
+  ### Limpiar tabla ###
+  #####################
+  
+  observeEvent(input$borrar_todo,{
+    puntos(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
+    
+    leafletProxy("mapa") |> clearMarkers() |> clearImages() |>  clearControls()
+  })
+  
+  
+  
+  
+  
   ##############################
   ### Realizar accesibilidad ###
   ##############################
@@ -444,14 +514,14 @@ server <- function(input, output, session) {
     if (is.null(puntos()) || length(puntos()) == 0 || nrow(puntos()) == 0) {
       leafletProxy("mapa") |>  
         clearImages() |> 
-        clearControls() 
+        clearControls()          # Quitar la 
       
       showNotification("Selecciona un punto en el mapa o sube un archivo.", type = "warning")
       tiempo_zona_p(NULL)
       return()  
     }
     
-  
+    
     
     
     
@@ -474,7 +544,7 @@ server <- function(input, output, session) {
     
     
     tiempo_zona[is.infinite(tiempo_zona)] = NA
-    tiempo_zona[tiempo_zona >= 300] = 300
+    tiempo_zona[tiempo_zona >= input$slider] = input$slider
     min_valor = raster::cellStats(tiempo_zona, stat = 'min')
     max_valor = raster::cellStats(tiempo_zona, stat = 'max')
     
@@ -515,7 +585,7 @@ server <- function(input, output, session) {
     }
   )
   
-
+  
   
   
   

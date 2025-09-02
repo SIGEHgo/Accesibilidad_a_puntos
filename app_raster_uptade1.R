@@ -2,13 +2,12 @@
 # Parche de actualizacion #
 ###########################
 
-# Puntos solo se pueden colocar dentro de Hidalgo
+# Puntos solo se pueden colocar dentro de Hidalgo Aprobado por chayanne
 # Boton al mapa para centrar                      Aprobado por chayanne
 # Marcadores solo colocar en Hidalgo              Aprobado por chayanne   
-# Boton para subir otro archivo
-# Deslizador para tiempo maximo
-# Boton para limpiar el mapa
-# Boton de zoom a la derecha
+# Boton para subir otro archivo                   Aprobado por chayanne
+# Deslizador para tiempo maximo                   Aprobado por chayanne
+# Boton para limpiar el mapa                      Aprobado por chayanne
 # Puntos y raster como capas
 
 
@@ -154,6 +153,12 @@ ui <- page_sidebar(
     )
   ),
   
+  tags$style(HTML("
+    .sk-fading-circle .sk-circle:before {
+      background-color: #9c2141 !important; 
+    }
+  ")),
+  
   # Buscador de capas en el mapa
   tags$script(HTML("
      Shiny.addCustomMessageHandler('simulateMarkerClick', function(data) {
@@ -174,8 +179,19 @@ ui <- page_sidebar(
   # Boton para eliminar un marcador
   tags$script(HTML("
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && 
+          e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
         Shiny.setInputValue('delete_key', new Date().getTime());
+      }
+    });
+  ")),
+  
+  ### Borrar toda la tabla
+  tags$script(HTML("
+    document.addEventListener('keydown', function(e) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && e.shiftKey &&
+          e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        Shiny.setInputValue('shift_delete_key', new Date().getTime());
       }
     });
   ")),
@@ -183,6 +199,7 @@ ui <- page_sidebar(
   
   
   sidebar = sidebar(
+    position = "right",
     width = 700,
     tags$img(
       src = "https://raw.githubusercontent.com/Eduardo-Alanis-Garcia/Js/main/Planeacion_dorado.png",     
@@ -203,22 +220,28 @@ ui <- page_sidebar(
              Un modelo de movilidad sobre grafos determina el costo mínimo de traslado (en minutos) desde cada punto del estado hacia el más cercano de los lugares destino.
            </p>"
     ),
-    h4("Agrega las ubicaciones, al subir un archivo", id = "titulo_mensaje_subido"),
-    ### Añadir el archivo
-    card(
-      id = "subir_archivo",
-      # title = "Agrega las ubicaciones. Puedes seleccionar varios archivos o subir un archivo .rar",
-      # Centering content and adding scroll if content overflows
-      div(id = "upload_area", style = "display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0px; overflow-y: auto;", # Added padding and overflow-y
-          fileInputArea(
-            inputId = "filemap",
-            label = "Arrastra o selecciona tus archivos .shp, .dbf, .shx, .prj, etc. aquí:",
-            buttonLabel = "Click para seleccionar archivos",
-            multiple = TRUE,
-            accept = c('.shp',".kml",".GeoJSON",".kmz", ".rar", ".zip")
+    
+    div(id = "upload_placeholder",
+        tags$h4("Agrega las ubicaciones, al subir un archivo", id = "titulo_mensaje_subido"),
+        card(
+          id = "subir_archivo",
+          div(id = "upload_area", style = "display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0px; overflow-y: auto;", # Added padding and overflow-y
+              fileInputArea(
+                inputId = "filemap",
+                label = "Arrastra o selecciona tus archivos .shp, .dbf, .shx, .prj, etc. aquí:",
+                buttonLabel = "Click para seleccionar archivos",
+                multiple = TRUE,
+                accept = c('.shp',".kml",".GeoJSON",".kmz", ".rar", ".zip")
+              ),
+              shiny::tableOutput("files")
           ),
-          shiny::tableOutput("files")
-      ),
+        ),
+        # mensaje que aparece AL SUBIR, inicialmente oculto
+        hidden(
+          div(id = "mensaje_subido",
+              tags$h4("✅ Archivo(s) subido(s) correctamente")
+          )
+        )
     ),
     
     h4("Datos"),
@@ -234,7 +257,7 @@ ui <- page_sidebar(
       column(width = 4, downloadButton(outputId = "downloadTiff", label = "Descargar TIFF", class = "btn btn-info"))
     )
   ),
-  withSpinner(leafletOutput("mapa", height = "100vh"), type = 4, color = "#0dc5c1")
+  withSpinner(leafletOutput("mapa", height = "100vh"), type = 4, color = "#9c2141")
 )
 
 server <- function(input, output, session) {
@@ -288,16 +311,9 @@ server <- function(input, output, session) {
   
   observeEvent(input$filemap, {
     req(input$filemap) 
-    insertUI(
-      selector = "#subir_archivo",
-      where = "afterEnd",
-      ui = tags$div(
-        id = "mensaje_subido",
-        tags$h4("✅ Archivo(s) subido(s) correctamente")
-      )
-    )
-    removeUI(selector = "#subir_archivo")
-    removeUI(selector = "#titulo_mensaje_subido")
+    show("mensaje_subido")
+    hide("subir_archivo")
+    hide("titulo_mensaje_subido")
   })
   
   
@@ -491,10 +507,34 @@ server <- function(input, output, session) {
   ### Limpiar tabla ###
   #####################
   
-  observeEvent(input$borrar_todo,{
+  # Queda pendiente que cuando pulsas las teclas no te saque el mensaje que cuando no seleccionas nada
+  
+  borrar_todo = function(){
+    if (is.null(puntos()) || length(puntos()) == 0 || nrow(puntos()) == 0) {
+      showNotification("No tienes ningun elemento", type = "warning")
+      return()
+    }
+    
     puntos(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
     
-    leafletProxy("mapa") |> clearMarkers() |> clearImages() |>  clearControls()
+    leafletProxy("mapa") |> 
+      clearMarkers() |> clearImages() |>  clearControls() |> 
+      setView(lng = -98.88704, lat = 20.47901, zoom = 9)
+    
+    
+    show("subir_archivo")
+    show("titulo_mensaje_subido")
+    hide("mensaje_subido")
+    
+    try(shinyjs::reset("subir_archivo"), silent = TRUE)
+  }
+  
+  observeEvent(input$borrar_todo,{
+    borrar_todo()
+  })
+  
+  observeEvent(input$shift_delete_key, {
+    borrar_todo()
   })
   
   
@@ -582,6 +622,7 @@ server <- function(input, output, session) {
         return()
       }
       writeRaster(tiempo_zona_p(), file, overwrite = TRUE)
+      showNotification("TIFF generado con éxito ✅", type = "message", duration = 5)
     }
   )
   

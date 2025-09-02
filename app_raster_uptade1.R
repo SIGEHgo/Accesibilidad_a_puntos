@@ -2,22 +2,14 @@
 # Parche de actualizacion #
 ###########################
 
-# Puntos solo se pueden colocar dentro de Hidalgo Aprobado por chayanne
-# Boton al mapa para centrar                      Aprobado por chayanne
-# Marcadores solo colocar en Hidalgo              Aprobado por chayanne   
-# Boton para subir otro archivo                   Aprobado por chayanne
-# Deslizador para tiempo maximo                   Aprobado por chayanne
-# Boton para limpiar el mapa                      Aprobado por chayanne
-# Puntos y raster como capas
-
-
-
-
-
-
-
-
-
+# Puntos solo se pueden colocar dentro de Hidalgo 
+# Boton al mapa para centrar                     
+# Marcadores solo colocar en Hidalgo               
+# Boton para subir otro archivo                   
+# Deslizador para tiempo maximo                   
+# Boton para limpiar el mapa                      
+# Boton para descargar tabla                     
+# Realizar delineado de entornos           Pendiente
 
 
 library(shiny)
@@ -196,6 +188,30 @@ ui <- page_sidebar(
     });
   ")),
   
+  tags$style(HTML("
+      .btn-outline-gob1 {
+        color: #9c2141;
+        border-color: #9c2141;
+        background-color: white;
+      }
+      .btn-outline-gob1:hover {
+        background-color: #9c2141;
+        color: white;
+      }
+    ")),
+  
+  tags$style(HTML("
+      .btn-outline-gob2 {
+        color: #b38e5d;
+        border-color: #b38e5d;
+        background-color: white;
+      }
+      .btn-outline-gob2:hover {
+        background-color: #b38e5d;
+        color: white;
+      }
+    ")),
+  
   
   
   sidebar = sidebar(
@@ -247,14 +263,14 @@ ui <- page_sidebar(
     h4("Datos"),
     DTOutput("puntos"), # Mostrar los puntos guardados
     fluidRow(
-      column(width = 4, actionButton("borrar_puntos", "Eliminar punto", class = "btn btn-outline-danger")),
+      column(width = 4, actionButton("borrar_puntos", "Eliminar punto", class = "btn-outline-gob1")),
       column(width = 4, actionButton("borrar_todo", "Limpiar tabla", class = "btn btn-outline-danger")),
-      column(width = 4, downloadButton(outputId = "downloadTabla", label = "Descargar Tabla", class = "btn btn-info"))
+      column(width = 4, downloadButton(outputId = "downloadTabla", label = "Descargar Tabla", class = "btn-outline-gob2"))
     ),
     fluidRow(
-      column(width = 4, numericInput(inputId = "slider", label = "Tiempo maximo",min = 30, max = 500, value = 300)),
-      column(width = 4, actionButton(inputId = "accesibilidad", label = "Accesibilidad", class = "btn btn-outline-success")),
-      column(width = 4, downloadButton(outputId = "downloadTiff", label = "Descargar TIFF", class = "btn btn-info"))
+      column(width = 4, numericInput(inputId = "slider", label = "Tiempo máximo", min = 30, max = 500, value = 300)),
+      column(width = 4, actionButton(inputId = "accesibilidad", label = HTML("Calcular <br> Accesibilidad"), class = "btn btn-outline-success")),
+      column(width = 4, downloadButton(outputId = "downloadTiff", label = HTML("Descargar <br> TIFF"), class = "btn btn-outline-primary"))
     )
   ),
   withSpinner(leafletOutput("mapa", height = "100vh"), type = 4, color = "#9c2141")
@@ -488,7 +504,16 @@ server <- function(input, output, session) {
                      lapply(FUN = function(x) { htmltools::HTML(x)})
         )
     } else{
-      leafletProxy("mapa") |>  clearMarkers()
+      
+      leafletProxy("mapa") |> 
+        clearMarkers() |> clearImages() |>  clearControls() |> 
+        setView(lng = -98.88704, lat = 20.47901, zoom = 9)
+      
+      show("subir_archivo")
+      show("titulo_mensaje_subido")
+      hide("mensaje_subido")
+      
+      try(shinyjs::reset("subir_archivo"), silent = TRUE)
     }
   }
   
@@ -607,7 +632,8 @@ server <- function(input, output, session) {
                   between = " – ",
                   suffix = " min",
                   transform = function(x) {x}
-                ))
+                )) |> 
+      setView(lng = -98.88704, lat = 20.47901, zoom = 9)
     waiter_hide()
   }) 
   
@@ -626,6 +652,21 @@ server <- function(input, output, session) {
     }
   )
   
+  
+  # Descargar Tabla
+  output$downloadTabla <- downloadHandler(
+    filename = function() {
+      paste0("mi_tabla_shiny_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      if (is.null(puntos()) || length(puntos()) == 0 || nrow(puntos()) == 0) {
+        showNotification("No se ha generado ningun CSV.", type = "warning")
+        return()
+      }
+      write.csv(puntos(), file, row.names = F, fileEncoding = "latin1")
+      showNotification("CSV generado con éxito ✅", type = "message", duration = 5)
+    }
+  )
   
   
   

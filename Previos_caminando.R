@@ -30,7 +30,21 @@ rutina_crear_copias_temporales <- function(inputFiles) {
   return(temp_dir)
 }
 
-
+cortes <- function(paleta, valores) {
+  if (attr(paleta, "colorType") == "numeric") {
+    bins <- 7
+    cuts <- if (length(bins) == 1) pretty(valores, n = bins) else bins
+    r <- range(valores, na.rm = TRUE)
+    cuts <- cuts[cuts >= r[1] & cuts <= r[2]]
+    n <- length(cuts)
+    p <- (cuts - r[1]) / (r[2] - r[1])
+    print(p)
+    colors <- paleta(c(cuts))
+    return(list(n = n, colors = colors))
+  } else {
+    stop("La paleta no es numérica")
+  }
+}
 
 mun = sf::read_sf("Accesibilidad/municipiosjair.shp")
 hidalgo= sf::st_read("Accesibilidad/hidalgo/LIM_MUNICIPALES.shp")

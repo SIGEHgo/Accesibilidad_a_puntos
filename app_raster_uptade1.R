@@ -9,7 +9,7 @@
 # Deslizador para tiempo maximo                   
 # Boton para limpiar el mapa                      
 # Boton para descargar tabla                     
-# Realizar delineado de entornos           Pendiente
+# Realizar delineado de contorno         
 
 
 library(shiny)
@@ -212,6 +212,17 @@ ui <- page_sidebar(
       }
     ")),
   
+  tags$style(
+    HTML("
+    #shiny-notification-panel#shiny-notification-panel{
+      position: fixed ;
+      bottom: calc(var(--bslib-spacer, 1rem) / 2);
+      left: calc(var(--bslib-spacer, 1rem) / 2);
+      right: auto !important;  
+    }
+  ")
+  ),
+  
   
   
   sidebar = sidebar(
@@ -244,7 +255,7 @@ ui <- page_sidebar(
           div(id = "upload_area", style = "display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0px; overflow-y: auto;", # Added padding and overflow-y
               fileInputArea(
                 inputId = "filemap",
-                label = "Arrastra o selecciona tus archivos .shp, .dbf, .shx, .prj, etc. aquí:",
+                label = "Arrastra o selecciona tus archivos .shp, .dbf, .shx, .prj, .rar, .zip, .geojson, .kmz, .kml, etc. aquí:",
                 buttonLabel = "Click para seleccionar archivos",
                 multiple = TRUE,
                 accept = c('.shp',".kml",".GeoJSON",".kmz", ".rar", ".zip")
@@ -344,7 +355,7 @@ server <- function(input, output, session) {
     leaflet(options = leafletOptions(doubleClickZoom = FALSE)) |>
       addTiles() |>
       addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
-                  label = paste0("Municipio: ", mun$NOM_MUN)
+                  label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
       ) |> 
       addResetMapButton()
   })
@@ -378,7 +389,8 @@ server <- function(input, output, session) {
             "Longitud: ", "<b>", round(puntos()$longitud, 4), "</b>"
           ),
           htmltools::HTML
-        )
+        ),
+        group = "Marcadores"
       )
   })
   
@@ -421,7 +433,8 @@ server <- function(input, output, session) {
                      "Latitud: ", "<b>", nuevo$latitud |>  round(digits = 4), "</b>", "<br>", 
                      "Longitud: ", "<b>", nuevo$longitud |>  round(digits = 4), "</b>"
                    ) |> 
-                     lapply(FUN = function(x) { htmltools::HTML(x)})
+                     lapply(FUN = function(x) { htmltools::HTML(x)}),
+                  group = "Marcadores" 
         )
     }else{
       showNotification("El punto está fuera de Hidalgo", type = "error")
@@ -467,12 +480,17 @@ server <- function(input, output, session) {
     datos_fila = puntos()[fila_seleccionada, ]
     fila_id = datos_fila$id
     cat("Tenemos que Fila id es: ", fila_id)
+    cat("Zoom: ")
+    print(input$mapa_zoom)
     
     if (!is.null(fila_id) && length(fila_id) > 0) {
       session$sendCustomMessage("simulateMarkerClick", list(id = as.character(fila_id)))
       leafletProxy("mapa") |>
-        setView(lng = datos_fila$longitud, lat = datos_fila$latitud, zoom = 11)
+        setView(lng = datos_fila$longitud, lat = datos_fila$latitud, zoom = dplyr::if_else(condition = input$mapa_zoom >= 11, true = input$mapa_zoom, false = 11))
     }
+    
+    
+    
   })
   
   
@@ -501,12 +519,16 @@ server <- function(input, output, session) {
                      "Latitud: ", "<b>", tabla$latitud |>  round(digits = 4), "</b>", "<br>", 
                      "Longitud: ", "<b>", tabla$longitud |>  round(digits = 4), "</b>"
                    ) |> 
-                     lapply(FUN = function(x) { htmltools::HTML(x)})
+                     lapply(FUN = function(x) { htmltools::HTML(x)}),
+                   group = "Marcadores"
         )
     } else{
       
       leafletProxy("mapa") |> 
-        clearMarkers() |> clearImages() |>  clearControls() |> 
+        clearMarkers() |> clearImages() |>  clearControls() |> clearShapes() |> clearGroup( c("Marcadores", "Raster", "Contorno")) |> 
+        addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
+                    label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
+        ) |> 
         setView(lng = -98.88704, lat = 20.47901, zoom = 9)
       
       show("subir_archivo")
@@ -543,7 +565,10 @@ server <- function(input, output, session) {
     puntos(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
     
     leafletProxy("mapa") |> 
-      clearMarkers() |> clearImages() |>  clearControls() |> 
+      clearMarkers() |> clearImages() |>  clearControls() |> clearShapes() |>  clearGroup( c("Marcadores", "Raster", "Contorno")) |> 
+      addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
+                  label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
+      ) |> 
       setView(lng = -98.88704, lat = 20.47901, zoom = 9)
     
     
@@ -586,7 +611,10 @@ server <- function(input, output, session) {
       return()  
     }
     
-    
+    if (input$slider < 30 || input$slider >500) {
+      showNotification("Selecciona un valor entre 30 y 500.", type = "warning")
+      return() 
+    }
     
     
     
@@ -622,18 +650,43 @@ server <- function(input, output, session) {
       domain = values(tiempo_zona),  
       na.color = "transparent"
     )
+    contorno_interes = cortes(paleta = paleta, valores = c(min_valor:max_valor))
+    contornos = raster::rasterToContour(tiempo_zona, levels = seq(min_valor, max_valor, length.out = contorno_interes$n))
+    cat("Imprimir colores de contorno: ")
+    print(contorno_interes$colors)
+    crs(contornos) = crs(hidalgo)
+    
+    contornos = sf::st_as_sf(x = contornos)
+    contornos = sf::st_transform(x = contornos, crs = sf::st_crs(mun))
+    
     
     leafletProxy("mapa") |>  
       clearImages() |> 
       clearControls() |> 
-      addRasterImage(x = tiempo_zona, colors = viridis::turbo(n = length(min_valor:max_valor), direction = -1, alpha = 0.5)) |> 
+      clearShapes() |> 
+      clearGroup( c("Marcadores", "Raster", "Contorno")) |> 
+      addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
+                  label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
+      ) |> 
+      addRasterImage(x = tiempo_zona, 
+                     colors = viridis::turbo(n = length(min_valor:max_valor),
+                      direction = -1, alpha = 0.5), 
+                     group = "Raster",
+                     layerId = "Raster") |> 
       addLegend(values = c(min_valor:max_valor) , pal = paleta, title = paste0("Tiempo", "<br>","Aproximado"), position = "bottomright",
                 labFormat = labelFormat(
                   between = " – ",
                   suffix = " min",
                   transform = function(x) {x}
                 )) |> 
-      setView(lng = -98.88704, lat = 20.47901, zoom = 9)
+      setView(lng = -98.88704, lat = 20.47901, zoom = 9) |> 
+      addPolylines(data = contornos, color = contorno_interes$colors[-1], 
+                   weight = 6, dashArray = "7,9", 
+                   label = paste(contornos$level, "minutos"),
+                   group = "Contorno", layerId = "Contorno") |>  # Primero longitud del segmento dibujado, segundo longitud del espacio en blanco entre segmentos.
+      addLayersControl(overlayGroups = c("Marcadores", "Raster", "Contorno"),
+                       position = "topright",
+                       options = layersControlOptions(collapsed = F))
     waiter_hide()
   }) 
   

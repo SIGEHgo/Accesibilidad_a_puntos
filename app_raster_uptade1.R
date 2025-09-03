@@ -377,7 +377,8 @@ server <- function(input, output, session) {
     req(nrow(puntos()) > 0)
     
     leafletProxy("mapa") |>
-      clearMarkers() |>  
+      clearMarkers() |> 
+      removeLayersControl() |>
       addMarkers(
         lng = puntos()$longitud,
         lat = puntos()$latitud,
@@ -525,7 +526,7 @@ server <- function(input, output, session) {
     } else{
       
       leafletProxy("mapa") |> 
-        clearMarkers() |> clearImages() |>  clearControls() |> clearShapes() |> clearGroup( c("Marcadores", "Raster", "Contorno")) |> 
+        clearMarkers() |> clearImages() |>  clearControls() |> clearShapes() |> removeLayersControl() |>  
         addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
                     label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
         ) |> 
@@ -565,7 +566,7 @@ server <- function(input, output, session) {
     puntos(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
     
     leafletProxy("mapa") |> 
-      clearMarkers() |> clearImages() |>  clearControls() |> clearShapes() |>  clearGroup( c("Marcadores", "Raster", "Contorno")) |> 
+      clearMarkers() |> clearImages() |>  clearControls() |> clearShapes() |> removeLayersControl() |>
       addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
                   label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
       ) |> 
@@ -658,13 +659,15 @@ server <- function(input, output, session) {
     
     contornos = sf::st_as_sf(x = contornos)
     contornos = sf::st_transform(x = contornos, crs = sf::st_crs(mun))
+    cat("Vamos a imprimir los colores: ")
+    print(contorno_interes$colors[-1])
     
     
     leafletProxy("mapa") |>  
       clearImages() |> 
       clearControls() |> 
       clearShapes() |> 
-      clearGroup( c("Marcadores", "Raster", "Contorno")) |> 
+      removeLayersControl() |>
       addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
                   label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
       ) |> 
@@ -683,7 +686,7 @@ server <- function(input, output, session) {
       addPolylines(data = contornos, color = contorno_interes$colors[-1], 
                    weight = 6, dashArray = "7,9", 
                    label = paste(contornos$level, "minutos"),
-                   group = "Contorno", layerId = "Contorno") |>  # Primero longitud del segmento dibujado, segundo longitud del espacio en blanco entre segmentos.
+                   group = "Contorno") |>  # Primero longitud del segmento dibujado, segundo longitud del espacio en blanco entre segmentos.
       addLayersControl(overlayGroups = c("Marcadores", "Raster", "Contorno"),
                        position = "topright",
                        options = layersControlOptions(collapsed = F))

@@ -1,0 +1,4 @@
+# Archivos temporales de R
+*.RDataTmp
+*.Rhistory
+Ejemplo/

@@ -1,26 +1,38 @@
-#install.packages(c('shiny','leaflet','leaflet.extras','viridis','leaflegend','leafem','archive','DT','sf','raster','gdistance'))
-# install.packages('archive')
-# install.packages('sf')
-# install.packages('raster')
-# install.packages('gdistance')
-# install.packages('leaflet')
-# install.packages('leaflet.extras')
-# install.packages('leaflegend')
-# install.packages('leafem')
-# install.packages('viridis')
+###########################
+# Parche de actualizacion #
+###########################
+
+# Puntos solo se pueden colocar dentro de Hidalgo 
+# Boton al mapa para centrar                     
+# Marcadores solo colocar en Hidalgo               
+# Boton para subir otro archivo                   
+# Deslizador para tiempo maximo                   
+# Boton para limpiar el mapa                      
+# Boton para descargar tabla                     
+# Realizar delineado de contorno         
+
 
 library(shiny)
 library(leaflet)
-library(leaflet.extras)
-library(leaflegend)
-library(leafem)
-library(archive)
-library(DT)
+library(bslib)
 library(sf)
-library(viridis)
-library(raster)
-library(gdistance)
+library(shinyjs)
+library(DT)
+library(archive)
+library(shinycssloaders)
+library(waiter)
+library(leaflet.extras)
+library(leaflet.extras2)
+library(shinyWidgets)
 
+### Carga de previos
+#source("Previos.R")
+source("Previos_caminando.R")
+
+
+####################################
+### Diseño del arrastrar archivo ###
+####################################
 
 fileInputArea <- function(inputId, label, multiple = FALSE, accept = NULL,
                           width = NULL, buttonLabel = "Browse...", placeholder = "No file selected") {
@@ -112,56 +124,146 @@ writeLines('
 )
 icon_encoded <- xfun::base64_uri(icon_file)
 
-#############################################################
-##### Accesibilidad Previa
-municipios = sf::read_sf("Accesibilidad//municipiosjair.shp")
-#setwd("Accesibilidad/Accesibilidad/")
-uso_de_suelo=raster("Accesibilidad/uso_de_suelo_friccion.tif")
-pendiente=raster("Accesibilidad/pendiente.tif")
-carreteras=raster("Accesibilidad/carreteras.tif")
-extent(carreteras)==extent(pendiente) &
-  extent(uso_de_suelo)==extent(pendiente)
-
-#Sí me voy a tomar la libertad de actualizar los valores del raster que estén cerca de 90 grados
-pendiente[pendiente<95.9 & pendiente>=90]=95.9
-pendiente[pendiente<=90 & pendiente>84.9]=84.9
-
-####Accesibilidad a pie
-slp_walk = 6 * exp(-0.4 * abs(tan(pendiente * pi / 180) + 0.05))  # Calcula la velocidad de caminata ajustada por la pendiente.
-terrain_walk_spd = uso_de_suelo * slp_walk       #Le quité el /5.0. Quiero pensar que es la velocidad de caminata según uso de suelo. El promedio es de 5.5 km/h         # Calcula la velocidad sobre el terreno ajustada por la pendiente y el uso de suelo.
-
-##Accesibilidad por carreteras
-slp_car = 50 * exp(-0.4 * abs(tan(pendiente * pi / 180) + 0.12))  # Calcula la velocidad sobre carreteras ajustada por la pendiente.
-sloped_road_spd = carreteras * slp_car / 50.0 # Calcula la velocidad ajustada por pendiente para carreteras y la convierte en un raster.
-merged_spd = merge(sloped_road_spd, terrain_walk_spd)     # Combina los rasters de velocidad de carreteras y terreno.
-friction = 1.0 / (merged_spd * 1000 / 60.0 ) 
-
-library(gdistance)
-Trans = transition(friction, function(x) 1 / mean(x), 8)  # Crea una matriz de transición basada en la fricción.
-T.GC = geoCorrection(Trans, type="c") 
-
-hidalgo= sf::st_read("Accesibilidad/hidalgo/LIM_MUNICIPALES.shp")
 
 
+########################
+### Inicio de la app ###
+########################
 
-card <- function(title, ...) {
-  htmltools::tags$div(
-    class = "card",
-    htmltools::tags$div(class = "card-header", title),
-    htmltools::tags$div(class = "card-body", ...)
-  )
-}
-
-ui <- fluidPage(
-  theme = bslib::bs_theme(version = 5),
-  includeCSS(css_btn_area), # Make sure css_btn_area is defined or loaded
+ui <- page_sidebar(
+  useShinyjs(),
+  useWaiter(),
+  tags$style(
+    HTML(
+      "
+    html, body,
+    .main.bslib-gap-spacing.html-fill-container {
+      height: 100%;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    "
+    )
+  ),
   
-  fluidRow(
-    # Left Column: Sidebar with explanation and card
-    column(width = 4,xs=12,sm=12,md=4,lg=4,xl=4, style = "background-color: #f5f5f5; padding: 20px;", 
-           h2("Cálculo de Accesibilidad"),
-           HTML(
-             "<p>
+  tags$style(HTML("
+    .sk-fading-circle .sk-circle:before {
+      background-color: #9c2141 !important; 
+    }
+  ")),
+  
+  # Buscador de capas en el mapa
+  tags$script(HTML("
+     Shiny.addCustomMessageHandler('simulateMarkerClick', function(data) {
+      console.log('simulateMarkerClick recibido con:', data);
+      var w = HTMLWidgets.find('#mapa');
+      if(!w) return;
+      var map = w.getMap();
+      map.eachLayer(function(layer){
+        if(layer.options && layer.options.layerId == data.id){
+          console.log('Layer detectado:', layer.options.layerId);
+          try { layer.fire('click'); }
+          catch(e) { console.warn('no se pudo disparar click en layer', e); }
+        }
+      });
+    });
+  ")),
+  
+  # Boton para eliminar un marcador
+  tags$script(HTML("
+    document.addEventListener('keydown', function(e) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && 
+          e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        Shiny.setInputValue('delete_key', new Date().getTime());
+      }
+    });
+  ")),
+  
+  ### Borrar toda la tabla
+  tags$script(HTML("
+    document.addEventListener('keydown', function(e) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && e.shiftKey &&
+          e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+        Shiny.setInputValue('shift_delete_key', new Date().getTime());
+      }
+    });
+  ")),
+  
+  tags$style(HTML("
+      .btn-outline-gob1 {
+        color: #9c2141;
+        border-color: #9c2141;
+        background-color: white;
+      }
+      .btn-outline-gob1:hover {
+        background-color: #9c2141;
+        color: white;
+      }
+    ")),
+  
+  tags$style(HTML("
+      .btn-outline-gob2 {
+        color: #b38e5d;
+        border-color: #b38e5d;
+        background-color: white;
+      }
+      .btn-outline-gob2:hover {
+        background-color: #b38e5d;
+        color: white;
+      }
+    ")),
+  
+  tags$style(
+    HTML("
+    #shiny-notification-panel#shiny-notification-panel{
+      position: fixed ;
+      bottom: calc(var(--bslib-spacer, 1rem) / 2);
+      left: calc(var(--bslib-spacer, 1rem) / 2);
+      right: auto !important;  
+    }
+  ")
+  ),
+  
+  tags$style(HTML("
+      /* Estilo personalizado para botones default */
+      .btn-outline-default, 
+      .btn-default:not(.btn-primary,.btn-secondary,.btn-info,
+                       .btn-success,.btn-danger,.btn-warning,
+                       .btn-light,.btn-dark,.btn-link,
+                       [class*='btn-outline-']) {
+        --bs-btn-color: #b38e5d;
+        --bs-btn-border-color: #b38e5d;
+        --bs-btn-hover-color: #fff;
+        --bs-btn-hover-bg: #b38e5d;
+        --bs-btn-hover-border-color: #b38e5d;
+        --bs-btn-focus-shadow-rgb: 64, 64, 64;
+        --bs-btn-active-color: #fff;
+        --bs-btn-active-bg: #b38e5d;
+        --bs-btn-active-border-color: #b38e5d;
+        --bs-btn-active-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+        --bs-btn-disabled-color: #404040;
+        --bs-btn-disabled-bg: transparent;
+        --bs-btn-disabled-border-color: #404040;
+        --bs-btn-bg: transparent;
+        --bs-gradient: none;
+      }
+    ")),
+  
+  
+  
+  sidebar = sidebar(
+    position = "right",
+    width = 700,
+    tags$img(
+      src = "https://raw.githubusercontent.com/Eduardo-Alanis-Garcia/Js/main/Planeacion_dorado.png",     
+      height = "50px",      
+      width = "auto",       
+      style = "display: block; margin: 0 auto;" # Centrar en el sidebar
+    ),
+    
+    h2("Cálculo de Accesibilidad caminando"),
+    HTML(
+      "<p>
              La accesibilidad se calcula como el costo de traslado a un lugar de destino predefinido. Para obtenerlo, se considera:
              <ul>
                <li><strong>Vialidades carreteras</strong> en el estado, así como sus velocidades promedio.</li>
@@ -170,51 +272,62 @@ ui <- fluidPage(
              </ul>
              Un modelo de movilidad sobre grafos determina el costo mínimo de traslado (en minutos) desde cada punto del estado hacia el más cercano de los lugares destino.
            </p>"
-           ),
-           
-           # Card for file input
-           card(
-             title = "Agrega las ubicaciones. Puedes seleccionar varios archivos o subir un archivo .rar",
-             # Removed full_screen as it's not a standard argument for card() based on your definition
-             
-             # Centering content and adding scroll if content overflows
-             div(style = "display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0px; overflow-y: auto;", # Added padding and overflow-y
-                 fileInputArea(
-                   inputId = "filemap",
-                   label = "Arrastra o selecciona tus archivos .shp, .dbf, .shx, .prj, etc. aquí:",
-                   buttonLabel = "Click para seleccionar archivos",
-                   multiple = TRUE,
-                   accept = c('.shp',".kml",".GeoJSON",".kmz", ".rar", ".zip")
-                 ),
-                 shiny::tableOutput("files")
-             )
-           ),
-           downloadButton("downloadTiff", "Descargar TIFF")
     ),
     
-    # Right Column: Map
-    column(width = 8,xs=12,sm=12,md=8,lg=8,xl=8, style = "height: 100vh;", # Keep 100vh for the map column
-           leafletOutput("map", height = "100%")
+    div(id = "upload_placeholder",
+        tags$h4("Agrega las ubicaciones, al subir un archivo", id = "titulo_mensaje_subido"),
+        card(
+          id = "subir_archivo",
+          div(id = "upload_area", style = "display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 0px; overflow-y: auto;", # Added padding and overflow-y
+              fileInputArea(
+                inputId = "filemap",
+                label = "Arrastra o selecciona tus archivos .shp, .dbf, .shx, .prj, .rar, .zip, .geojson, .kmz, .kml, etc. aquí:",
+                buttonLabel = "Click para seleccionar archivos",
+                multiple = TRUE,
+                accept = c('.shp',".kml",".GeoJSON",".kmz", ".rar", ".zip")
+              ),
+              shiny::tableOutput("files")
+          ),
+        ),
+        # mensaje que aparece AL SUBIR, inicialmente oculto
+        hidden(
+          div(id = "mensaje_subido",
+              tags$h4("✅ Archivo(s) subido(s) correctamente")
+          )
+        )
+    ),
+    
+    h4("Datos"),
+    DTOutput("puntos"), # Mostrar los puntos guardados
+    fluidRow(
+      column(width = 4, actionButton("borrar_puntos", "Eliminar punto", class = "btn-outline-gob1")),
+      column(width = 4, actionButton("borrar_todo", "Limpiar tabla", class = "btn btn-outline-danger")),
+      column(width = 4, dropdownButton(
+        label = "Descargar Tabla",
+        circle = FALSE,
+        status = "default",
+        icon = icon("download"),
+        tooltip = tooltipOptions(title = "Elige formato"),
+        downloadButton(outputId = "downloadTabla", label = "CSV"),
+        downloadButton(outputId = "downloadExcel", label = "Excel")
+      ))
+    ),
+    fluidRow(
+      column(width = 4, numericInput(inputId = "slider", label = "Tiempo máximo", min = 30, max = 500, value = 300)),
+      column(width = 4, actionButton(inputId = "accesibilidad", label = HTML("Calcular <br> Accesibilidad"), class = "btn btn-outline-success")),
+      column(width = 4, downloadButton(outputId = "downloadTiff", label = HTML("Descargar <br> TIFF"), class = "btn btn-outline-primary"))
     )
-  )
+  ),
+  withSpinner(leafletOutput("mapa", height = "100vh"), type = 4, color = "#9c2141")
 )
-# Función para manejar archivos temporales ----
-rutina_crear_copias_temporales <- function(inputFiles) {
-  temp_dir <- tempfile()
-  dir.create(temp_dir)
-  if (!grepl("\\.(rar|zip|kmz)$", inputFiles$datapath[1], ignore.case = TRUE)) {
-    for (i in seq_along(inputFiles$name)) {
-      file.copy(inputFiles$datapath[i], file.path(temp_dir, inputFiles$name[i]))
-    }
-  } else {
-    file.copy(inputFiles$datapath[1], file.path(temp_dir, inputFiles$name[1]))
-    archive_extract(file.path(temp_dir, inputFiles$name[1]), dir = temp_dir)
-  }
-  return(temp_dir)
-}
 
 server <- function(input, output, session) {
-  df <- reactive({
+  
+  #######################
+  ### Carga de datos ####
+  #######################
+  
+  datos_carga = reactive({
     req(input$filemap)
     temp_dir <- rutina_crear_copias_temporales(input$filemap)
     shapes=list.files(temp_dir, pattern = "\\.shp$", full.names = TRUE)
@@ -227,22 +340,397 @@ server <- function(input, output, session) {
     else{
       st_read(para_leer)|> st_zm()
     }
+  })
+  
+  datos = reactive({
+    req(datos_carga())
+    if(is.na(st_crs(datos_carga()))){
+      datos = st_set_crs(datos_carga(),value = sf::st_crs(mun) )
+    }else{
+      datos = datos_carga()
+    }
+    datos = datos |> st_transform(sf::st_crs(mun))
+    datos = datos |> 
+      dplyr::mutate(id = 1:nrow(datos))
+    
+    
+    coordenadas = sf::st_coordinates(datos) |>  as.data.frame()
+    coordenadas = coordenadas |> 
+      dplyr::rename(longitud = X,
+                    latitud = Y)
+    
+    datos = dplyr::bind_cols(datos, coordenadas)
+    datos = sf::st_drop_geometry(datos)
+    cat("Vamos imprimir datos cuando se cargan: ", "\n")
+    print(datos[, c((ncol(datos) -2), ncol(datos))])
+    datos
+  })
+  
+  ######################################
+  ### Eliminar donde añades archivos ###
+  ######################################
+  
+  observeEvent(input$filemap, {
+    req(input$filemap) 
+    show("mensaje_subido")
+    hide("subir_archivo")
+    hide("titulo_mensaje_subido")
+  })
+  
+  
+  
+  
+  
+  
+  
+  
+  # Mostrar el mapa sin nada
+  output$mapa <- renderLeaflet({
+    leaflet(options = leafletOptions(doubleClickZoom = FALSE)) |>
+      addTiles() |>
+      addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
+                  label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
+      ) |> 
+      addResetMapButton()
+  })
+  
+  # Inicializa siempre
+  puntos <- reactiveVal(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
+  
+  observe({
+    req(datos())  # asegura que no sea NULL
+    if (nrow(datos()) == 0) {
+      puntos(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
+    } else {
+      puntos(datos())
+    }
+  })
+  
+  observe({
+    req(puntos()) 
+    req(nrow(puntos()) > 0)
+    
+    leafletProxy("mapa") |>
+      clearMarkers() |> 
+      addMarkers(
+        lng = puntos()$longitud,
+        lat = puntos()$latitud,
+        layerId = as.character(puntos()$id),
+        label = lapply(
+          paste0(
+            "ID: ", "<b>", puntos()$id, "</b>", "<br>", 
+            "Latitud: ", "<b>", round(puntos()$latitud, 4), "</b>", "<br>", 
+            "Longitud: ", "<b>", round(puntos()$longitud, 4), "</b>"
+          ),
+          htmltools::HTML
+        ),
+        group = "Marcadores"
+      )
+  })
+  
+  ######################################
+  ### Click en el mapa añadir puntos ###
+  ######################################
+  
+  observeEvent(input$mapa_click, {
+    click = input$mapa_click
+    
+    punto_click = sf::st_as_sf(
+      data.frame(lon = click$lng, lat = click$lat),
+      coords = c("lon", "lat"),
+      crs = sf::st_crs(mun) 
+    )
+    
+    # Checar si esta dentro de Hidalgo
+    dentro = sf::st_intersects(x = punto_click, mun)
+    cat("Tenemoms que dentro es: ", "\n")
+    print(dentro)
+    
+    if (lengths(dentro) > 0) {
+      cat("Tenemos que nrow(puntos()) es: ", nrow(puntos()), "\n")
+      id_unico = dplyr::if_else(condition = nrow(puntos()) == 0, true = 1, false = max(puntos()$id) + 1)
+      nuevo = data.frame(id = id_unico, latitud = click$lat, longitud = click$lng)
+      cat("Se ha hecho click en:", click$lat, click$lng, "\n")
+      cat("Vamos imprimir puntos sin hacer la union: ", "\n")
+      print(puntos())
+      
+      # Añadir pulsados
+      puntos(dplyr::bind_rows(puntos(), nuevo))
+      cat("Vamos  a imprimir puntos cuando hace la union: ", "\n")
+      print(puntos())
+      
+      # Añadir al mapa
+      leafletProxy("mapa") |>
+        addMarkers(lng = nuevo$longitud, lat = nuevo$latitud, layerId = as.character(nuevo$id), 
+                   label = paste0(
+                     "ID: ", "<b>", nuevo$id, "</b>", "<br>", 
+                     "Latitud: ", "<b>", nuevo$latitud |>  round(digits = 4), "</b>", "<br>", 
+                     "Longitud: ", "<b>", nuevo$longitud |>  round(digits = 4), "</b>"
+                   ) |> 
+                     lapply(FUN = function(x) { htmltools::HTML(x)}),
+                  group = "Marcadores" 
+        )
+    }else{
+      showNotification("El punto está fuera de Hidalgo", type = "error")
+    }
+    
+    
     
   })
-  tiempo_zona_p=reactive({
-    req(df())
-    if(is.na(st_crs(df()))){
-      df=st_set_crs(df(),value ="EPSG:4326" )
-      puntos = df
-    }else{
-      puntos = df()
-    }
-    puntos=puntos |> st_transform(st_crs(hidalgo))
-    coordenadas = sf::st_coordinates(puntos)
-    tiempo_zona_p = accCost(T.GC, coordenadas)
-    raster::crs(tiempo_zona_p) = crs(hidalgo)
-    tiempo_zona_p
+  
+  
+  ########################
+  ### Mostrar la tabla ###
+  ########################
+  
+  output$puntos <-  DT::renderDT({
+    mostrar = puntos() |> 
+      dplyr::mutate(latitud = round(x = latitud, digits = 4),
+                    longitud = round(x = longitud, digits = 4))
+    datatable(mostrar, selection = "single", rownames = FALSE, options = list(pageLength = 5))
   })
+  
+  ##############################################################
+  ### Seleccionado mapa es seleccionado en tabla y viseversa ###
+  ##############################################################
+  
+  ### Seleccionas marcador entonces se selecciona fila
+  observeEvent(input$mapa_marker_click, {
+    marcador_seleccionado = input$mapa_marker_click$id
+    cat("Marcador seleccionado: ", marcador_seleccionado, " que tiene la clase de ", marcador_seleccionado |> class(), "\n")
+    
+    cat("El que nos interesa: ", which(puntos()$id == as.integer(marcador_seleccionado)), "donde su clase es: ", which(puntos()$id == as.integer(marcador_seleccionado)) |>  class(), "\n")
+    fila_coincide = which(puntos()$id == as.integer(marcador_seleccionado))
+    
+    # Seleccionar esa fila en la tabla
+    selectRows(dataTableProxy("puntos"), as.integer(fila_coincide))
+  })
+  
+  ### Seleccionas fila entonces se selecciona marcador
+  observeEvent(input$puntos_rows_selected, {
+    fila_seleccionada = input$puntos_rows_selected
+    cat("Fila seleccionada: ", fila_seleccionada, " que tiene la clase de ", class(fila_seleccionada), "\n")
+    
+    datos_fila = puntos()[fila_seleccionada, ]
+    fila_id = datos_fila$id
+    cat("Tenemos que Fila id es: ", fila_id)
+    cat("Zoom: ")
+    print(input$mapa_zoom)
+    
+    if (!is.null(fila_id) && length(fila_id) > 0) {
+      session$sendCustomMessage("simulateMarkerClick", list(id = as.character(fila_id)))
+      leafletProxy("mapa") |>
+        setView(lng = datos_fila$longitud, lat = datos_fila$latitud, zoom = dplyr::if_else(condition = input$mapa_zoom >= 11, true = input$mapa_zoom, false = 11))
+    }
+    
+    
+    
+  })
+  
+  
+  
+  ##########################################
+  ### Eliminar seleccionados en la tabla ###
+  ##########################################
+  borrar_puntos_fun = function() {
+    seleccionado = input$puntos_rows_selected
+    cat("Imprimiendo fila seleccionada id: ", seleccionado, " donde su clase es", seleccionado |> class(), "\n")
+    
+    if (is.null(seleccionado) || length(seleccionado) == 0) {
+      showNotification("Selecciona una fila en la tabla o un marcador en el mapa antes de borrar.", type = "warning")
+      return()
+    }
+    
+    tabla = puntos()
+    tabla = tabla[-seleccionado, ] 
+    puntos(tabla)
+    
+    if (nrow(tabla) > 0) {
+      leafletProxy("mapa") |>  clearMarkers() |> 
+        addMarkers(data = tabla, lng = tabla$longitud, lat = tabla$latitud, layerId = as.character(tabla$id), 
+                   label = paste0(
+                     "ID: ", "<b>", tabla$id, "</b>", "<br>", 
+                     "Latitud: ", "<b>", tabla$latitud |>  round(digits = 4), "</b>", "<br>", 
+                     "Longitud: ", "<b>", tabla$longitud |>  round(digits = 4), "</b>"
+                   ) |> 
+                     lapply(FUN = function(x) { htmltools::HTML(x)}),
+                   group = "Marcadores"
+        )
+    } else{
+      
+      leafletProxy("mapa") |> 
+        clearMarkers() |> clearImages() |>  clearControls() |> clearShapes() |> removeLayersControl() |>  
+        addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
+                    label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
+        ) |> 
+        setView(lng = -98.88704, lat = 20.47901, zoom = 9)
+      
+      show("subir_archivo")
+      show("titulo_mensaje_subido")
+      hide("mensaje_subido")
+      
+      try(shinyjs::reset("subir_archivo"), silent = TRUE)
+    }
+  }
+  
+  # Boton solo lo mando a llamar
+  observeEvent(input$borrar_puntos, {
+    borrar_puntos_fun()
+  })
+  
+  # Mando a llamar la funcion cuando pulso la tecla
+  observeEvent(input$delete_key, {
+    borrar_puntos_fun()
+  })
+  
+  
+  #####################
+  ### Limpiar tabla ###
+  #####################
+  
+  # Queda pendiente que cuando pulsas las teclas no te saque el mensaje que cuando no seleccionas nada
+  
+  borrar_todo = function(){
+    if (is.null(puntos()) || length(puntos()) == 0 || nrow(puntos()) == 0) {
+      showNotification("No tienes ningun elemento", type = "warning")
+      return()
+    }
+    
+    puntos(data.frame(id = numeric(0), latitud = numeric(0), longitud = numeric(0)))
+    
+    leafletProxy("mapa") |> 
+      clearMarkers() |> clearImages() |>  clearControls() |> clearShapes() |> removeLayersControl() |>
+      addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
+                  label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
+      ) |> 
+      setView(lng = -98.88704, lat = 20.47901, zoom = 9)
+    
+    
+    show("subir_archivo")
+    show("titulo_mensaje_subido")
+    hide("mensaje_subido")
+    
+    try(shinyjs::reset("subir_archivo"), silent = TRUE)
+  }
+  
+  observeEvent(input$borrar_todo,{
+    borrar_todo()
+  })
+  
+  observeEvent(input$shift_delete_key, {
+    borrar_todo()
+  })
+  
+  
+  
+  
+  
+  ##############################
+  ### Realizar accesibilidad ###
+  ##############################
+  
+  tiempo_zona_p = reactiveVal(NULL)
+  
+  # Hace accesibilidad
+  observeEvent(input$accesibilidad, {
+    req(puntos())
+    
+    if (is.null(puntos()) || length(puntos()) == 0 || nrow(puntos()) == 0) {
+      leafletProxy("mapa") |>  
+        clearImages() |> 
+        clearControls()          # Quitar la 
+      
+      showNotification("Selecciona un punto en el mapa o sube un archivo.", type = "warning")
+      tiempo_zona_p(NULL)
+      return()  
+    }
+    
+    if (input$slider < 30 || input$slider >500) {
+      showNotification("Selecciona un valor entre 30 y 500.", type = "warning")
+      return() 
+    }
+    
+    
+    
+    waiter_show(html = spin_fading_circles(), color = "rgba(255,255,255,0.8)")
+    
+    
+    df = puntos()
+    print("Estamos imprimiendo el df como llega: ")
+    print(df)
+    df = sf::st_as_sf(x = df, coords = c("longitud", "latitud"),crs = sf::st_crs(mun))
+    cat("Estamos imprimiendo el df luego de pasarlo a sf: ")
+    print(df)
+    df = df |> st_transform(st_crs(hidalgo))
+    coordenadas = sf::st_coordinates(df)
+    print(coordenadas)
+    tiempo_zona = accCost(T.GC, coordenadas)
+    print(tiempo_zona)
+    raster::crs(tiempo_zona) = crs(hidalgo)
+    tiempo_zona_p(tiempo_zona)  # Lo guardo en tiempo_zona_p
+    
+    
+    tiempo_zona[is.infinite(tiempo_zona)] = NA
+    tiempo_zona[tiempo_zona >= input$slider] = input$slider
+    min_valor = raster::cellStats(tiempo_zona, stat = 'min')
+    max_valor = raster::cellStats(tiempo_zona, stat = 'max')
+    
+    print(tiempo_zona)
+    print(min_valor)
+    print(max_valor)
+    
+    paleta = colorNumeric(
+      palette = viridisLite::turbo(n = length(min_valor:max_valor), direction = -1, alpha = 0.5),
+      domain = values(tiempo_zona),  
+      na.color = "transparent"
+    )
+    contorno_interes = cortes(paleta = paleta, valores = c(min_valor:max_valor))
+    contornos = raster::rasterToContour(tiempo_zona, levels = seq(min_valor, max_valor, length.out = contorno_interes$n))
+    cat("Imprimir colores de contorno: ")
+    print(contorno_interes$colors)
+    crs(contornos) = crs(hidalgo)
+    
+    contornos = sf::st_as_sf(x = contornos)
+    contornos = sf::st_transform(x = contornos, crs = sf::st_crs(mun))
+    cat("Vamos a imprimir los colores: ")
+    print(contorno_interes$colors[-1])
+    
+    
+    leafletProxy("mapa") |>  
+      clearImages() |> 
+      clearControls() |> 
+      clearShapes() |> 
+      removeLayersControl() |>
+      addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
+                  label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
+      ) |> 
+      addRasterImage(x = tiempo_zona, 
+                     colors = viridis::turbo(n = length(min_valor:max_valor),
+                      direction = -1, alpha = 0.5), 
+                     group = "Raster",
+                     layerId = "Raster") |> 
+      addLegend(values = c(min_valor:max_valor) , pal = paleta, title = paste0("Tiempo", "<br>","Aproximado"), position = "bottomright",
+                labFormat = labelFormat(
+                  between = " – ",
+                  suffix = " min",
+                  transform = function(x) {x}
+                )) |> 
+      setView(lng = -98.88704, lat = 20.47901, zoom = 9) |> 
+      addPolylines(data = contornos, color = contorno_interes$colors[-1], 
+                   weight = 6, dashArray = "7,9", 
+                   label = paste(contornos$level, "minutos"),
+                   group = "Contorno") |>  # Primero longitud del segmento dibujado, segundo longitud del espacio en blanco entre segmentos.
+      addLayersControl(overlayGroups = c("Marcadores", "Raster", "Contorno"),
+                       position = "topright",
+                       options = layersControlOptions(collapsed = F))
+    waiter_hide()
+  }) 
+  
+  
+  
+  #################
+  ### Descargas ###
+  #################
   
   # Descargar TIFF
   output$downloadTiff <- downloadHandler(
@@ -250,72 +738,47 @@ server <- function(input, output, session) {
       paste0("mi_raster_shiny_", Sys.Date(), ".tif")
     },
     content = function(file) {
+      if (is.null(tiempo_zona_p())) {
+        showNotification("No se ha generado ningun TIFF.", type = "warning")
+        return()
+      }
       writeRaster(tiempo_zona_p(), file, overwrite = TRUE)
+      showNotification("TIFF generado con éxito ✅", type = "message", duration = 5)
     }
   )
-
-  # Mostrar mapa
-  output$map <- renderLeaflet({
-    req(tiempo_zona_p())
-    ###Pendiente: Municipio de ubicación.
-    tiempo_zona=tiempo_zona_p()
-    tiempo_zona[is.infinite(tiempo_zona)] = NA
-    tiempo_zona[tiempo_zona >= 300] = 300
-    min_valor = raster::cellStats(tiempo_zona, stat = 'min')
-    max_valor = raster::cellStats(tiempo_zona, stat = 'max')
-    
-    paleta = colorNumeric(
-      palette = viridisLite::turbo(n = length(min_valor:max_valor), direction = -1, alpha = 0.5),
-      domain = values(tiempo_zona),  
-      na.color = "transparent"
-    )
-  print(colnames(df()))
-  #writeRaster(tiempo_zona,"A.tif")
-    leaflet() |>
-      addTiles() |> 
-      addMarkers(data=df() |> st_cast("POINT") |> as("Spatial"), 
-                 popup = ~paste0(
-                   ifelse("Name" %in% colnames(df()),
-                          paste0("Nombre: <b>", Name, "</b><br>")
-                          ,""),
-                   ifelse("nombre" %in% colnames(df()),
-                          paste0("Nombre: <b>", nombre, "</b><br>")
-                          ,"")
-                   ,
-                   ifelse("scrtr_n" %in% colnames(df()),
-                          paste0("Secretaría: <b>", scrtr_n, "</b><br>")
-                          ,"")
-                   ,
-                   ifelse("dpndnc_n" %in% colnames(df()),
-                          paste0("Dependencia: <b>", dpndnc_n, "</b><br>")
-                          ,"")
-                   ,
-                   ifelse("nmbr_st" %in% colnames(df()),
-                          paste0("Nombre establecimiento: <b>", nmbr_st, "</b><br>")
-                          ,"")
-                   ,
-                   ifelse("horr_st" %in% colnames(df()),
-                          paste0("Horario del establecimiento: <b>", horr_st, "</b>")
-                          ,"")
-                   )
-                 ) |> 
-      addRasterImage(x = tiempo_zona, colors = viridis::turbo(n = length(min_valor:max_valor), direction = -1, alpha = 0.5)) |> 
-      addPolygons(data=municipios |> as("Spatial"),
-                  label = municipios$NOM_MUN,fillColor = "gray",fillOpacity = 0.1,color = "white",weight = 1,opacity = 0.4,group = "Municipios") |> 
-      addLegend(values = c(min_valor:max_valor) , pal = paleta, title = paste0("Tiempo", "<br>","Aproximado"), position = "bottomright",
-                labFormat = labelFormat(
-                  between = " – ",
-                  suffix = " min",
-                  transform = function(x) {x}
-                )) |> 
-      addSearchFeatures(targetGroups = c("Municipios"),
-                        options = searchFeaturesOptions(
-                          zoom = 12,
-                          openPopup = F,
-                          firstTipSubmit =F,initial = F,
-                          hideMarkerOnCollapse =T))|>setView(lng = -98.7591, lat = 20.0511, zoom = 9) |> 
-      addLogo(img = "https://raw.githubusercontent.com/JairEsc/Gob/main/Otros_archivos/imagenes/laboratorio_planeacion.png", position = "bottomleft", src = "remote", width = "399px",height = "80px" )
-  })
+  
+  
+  # Descargar Tabla
+  output$downloadTabla <- downloadHandler(
+    filename = function() {
+      paste0("mi_tabla_shiny_", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      if (is.null(puntos()) || length(puntos()) == 0 || nrow(puntos()) == 0) {
+        showNotification("No se ha generado ningun CSV.", type = "warning")
+        return()
+      }
+      write.csv(puntos(), file, row.names = F, fileEncoding = "latin1")
+      showNotification("CSV generado con éxito ✅", type = "message", duration = 5)
+    }
+  )
+  
+  output$downloadExcel <- downloadHandler(
+    filename = function() {
+      paste0("mi_tabla_shiny_", Sys.Date(), ".xlsx")
+    },
+    content = function(file) {
+      if (is.null(puntos()) || length(puntos()) == 0 || nrow(puntos()) == 0) {
+        showNotification("No se ha generado ningun Excel.", type = "warning")
+        return()
+      }
+      openxlsx::write.xlsx(puntos(), file, overwrite = TRUE)
+      showNotification("Excel generado con éxito ✅", type = "message", duration = 5)
+    }
+  )
+  
+  
+  
 }
 
 shinyApp(ui, server)

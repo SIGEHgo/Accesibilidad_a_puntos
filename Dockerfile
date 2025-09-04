@@ -1,9 +1,8 @@
-# Dockerfile (recomendado)
-FROM rocker/geospatial:latest
+FROM rocker/geospatial:4.5.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# paquetes de sistema extra que sf y otros paquetes R suelen necesitar
+# Instalar dependencias de sistema adicionales
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libxml2-dev \
@@ -12,12 +11,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libarchive-dev \
   && rm -rf /var/lib/apt/lists/*
 
-# instalar paquetes R (usa repositorio HTTPS)
-RUN R -e "install.packages(c('shiny','leaflet','bslib','sf','shinyjs','DT','archive','shinycssloaders','waiter','leaflet.extras','leaflet.extras2','shinyWidgets','leafem','viridis','raster','gdistance','openxlsx'), repos='https://cran.rstudio.com')"
+# Instalar paquetes R (repos Posit para estabilidad)
+RUN R -e "options(repos = c(CRAN='https://packagemanager.posit.co/cran/latest')); \
+          install.packages(c('shiny','leaflet','bslib','sf','shinyjs','DT','archive','shinycssloaders','waiter','leaflet.extras','leaflet.extras2','shinyWidgets','leafem','viridis','raster','gdistance','openxlsx'))"
 
-# copiar la app al directorio típico de shiny-server
-COPY . /home/shiny-app 
+# Copiar la app al contenedor
+WORKDIR /home/shiny-app
+COPY . /home/shiny-app
 
-EXPOSE 8180
+# Exponer puerto
+EXPOSE 3838
 
-CMD ["R", "-e", "shiny::runApp('/home/shiny-app/app.R', port=8180, host='0.0.0.0')"]
+# Ejecutar con shiny directamente (si no usas shiny-server)
+CMD ["R", "-e", "shiny::runApp('/home/shiny-app/app.R', port=3838, host='0.0.0.0')"]

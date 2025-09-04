@@ -290,7 +290,7 @@ ui <- page_sidebar(
           ),
         ),
         # mensaje que aparece AL SUBIR, inicialmente oculto
-        hidden(
+        shinyjs::hidden(
           div(id = "mensaje_subido",
               tags$h4("✅ Archivo(s) subido(s) correctamente")
           )
@@ -372,9 +372,9 @@ server <- function(input, output, session) {
   
   observeEvent(input$filemap, {
     req(input$filemap) 
-    show("mensaje_subido")
-    hide("subir_archivo")
-    hide("titulo_mensaje_subido")
+    shinyjs::show("mensaje_subido")
+    shinyjs::hide("subir_archivo")
+    shinyjs::hide("titulo_mensaje_subido")
   })
   
   
@@ -606,9 +606,9 @@ server <- function(input, output, session) {
       setView(lng = -98.88704, lat = 20.47901, zoom = 9)
     
     
-    show("subir_archivo")
-    show("titulo_mensaje_subido")
-    hide("mensaje_subido")
+    shinyjs::show("subir_archivo")
+    shinyjs::show("titulo_mensaje_subido")
+    shinyjs::hide("mensaje_subido")
     
     try(shinyjs::reset("subir_archivo"), silent = TRUE)
   }

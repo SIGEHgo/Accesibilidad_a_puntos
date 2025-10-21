@@ -258,13 +258,8 @@ ui <- page_sidebar(
   sidebar = sidebar(
     position = "right",
     width = "50%",
-    max_height_mobile = "768px",
-    tags$img(
-      src = "https://raw.githubusercontent.com/Eduardo-Alanis-Garcia/Js/main/Planeacion_dorado.png",     
-      height = "50px",      
-      width = "auto",       
-      style = "display: block; margin: 0 auto;" # Centrar en el sidebar
-    ),
+    max_height_mobile = "40%",
+    open = list(desktop = "open", mobile = "always-above"),
     
     h2("Cálculo de Accesibilidad"),
     HTML(

@@ -29,13 +29,8 @@ library(shinyWidgets)
 #source("Previos.R")
 source("Codigos/Previo_general.R")
 
-Trans_caminando = readRDS("Output/Trans_caminando.rds")
-Trans_carretera = readRDS("Output/Trans_carretera.rds")
-
 T.GC_caminando = readRDS("Output/T.GC_caminando.rds")
 T.GC_carretera = readRDS("Output/T.GC_carretera.rds")
-
-
 
 ####################################
 ### Diseño del arrastrar archivo ###
@@ -140,6 +135,8 @@ icon_encoded <- xfun::base64_uri(icon_file)
 ui <- page_sidebar(
   useShinyjs(),
   useWaiter(),
+  
+  
   tags$style(
     HTML(
       "
@@ -260,7 +257,8 @@ ui <- page_sidebar(
   
   sidebar = sidebar(
     position = "right",
-    width = 700,
+    width = "50%",
+    max_height_mobile = "768px",
     tags$img(
       src = "https://raw.githubusercontent.com/Eduardo-Alanis-Garcia/Js/main/Planeacion_dorado.png",     
       height = "50px",      

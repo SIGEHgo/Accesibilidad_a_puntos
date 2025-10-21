@@ -416,8 +416,7 @@ server <- function(input, output, session) {
       addTiles() |>
       addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
                   label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
-      ) |> 
-      addResetMapButton()
+      ) 
   })
   
   # Inicializa siempre

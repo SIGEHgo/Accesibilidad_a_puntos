@@ -324,7 +324,6 @@ ui <- page_sidebar(
         circle = FALSE,
         status = "default",
         icon = icon("download"),
-        tooltip = tooltipOptions(title = "Elige formato"),
         downloadButton(outputId = "downloadTabla", label = "CSV"),
         downloadButton(outputId = "downloadExcel", label = "Excel")
       ))

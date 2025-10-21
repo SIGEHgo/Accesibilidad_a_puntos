@@ -27,7 +27,14 @@ library(shinyWidgets)
 
 ### Carga de previos
 #source("Previos.R")
-source("Previos_caminando.R")
+source("Codigos/Previo_general.R")
+
+Trans_caminando = readRDS("Output/Trans_caminando.rds")
+Trans_carretera = readRDS("Output/Trans_carretera.rds")
+
+T.GC_caminando = readRDS("Output/T.GC_caminando.rds")
+T.GC_carretera = readRDS("Output/T.GC_carretera.rds")
+
 
 
 ####################################
@@ -261,7 +268,7 @@ ui <- page_sidebar(
       style = "display: block; margin: 0 auto;" # Centrar en el sidebar
     ),
     
-    h2("Cálculo de Accesibilidad caminando"),
+    h2("Cálculo de Accesibilidad"),
     HTML(
       "<p>
              La accesibilidad se calcula como el costo de traslado a un lugar de destino predefinido. Para obtenerlo, se considera:
@@ -273,6 +280,16 @@ ui <- page_sidebar(
              Un modelo de movilidad sobre grafos determina el costo mínimo de traslado (en minutos) desde cada punto del estado hacia el más cercano de los lugares destino.
            </p>"
     ),
+    
+    radioButtons( 
+      inputId = "tipo_accesibilidad", 
+      label = "Seleccione el tipo de accesibilidad", 
+      choices = list( 
+        "Caminando" = 1, 
+        "Carretera" = 2
+      ),
+      selected = 1
+    ), 
     
     div(id = "upload_placeholder",
         tags$h4("Agrega las ubicaciones, al subir un archivo", id = "titulo_mensaje_subido"),
@@ -322,6 +339,23 @@ ui <- page_sidebar(
 )
 
 server <- function(input, output, session) {
+  
+  T.GC_selec = reactiveVal()
+  
+  observeEvent(input$tipo_accesibilidad, {
+    waiter_show(html = spin_fading_circles(), color = "rgba(255,255,255,0.8)")
+    
+    if (input$tipo_accesibilidad == 1) {
+      T.GC_selec(T.GC_caminando)  
+      message("Accesibilidad caminando seleccionada")
+      
+    } else if (input$tipo_accesibilidad == 2) {
+      T.GC_selec(T.GC_carretera)
+      message("Accesibilidad carretera seleccionada")
+    }
+    
+    waiter_hide()
+  }, ignoreInit = F)
   
   #######################
   ### Carga de datos ####
@@ -664,6 +698,7 @@ server <- function(input, output, session) {
     df = df |> st_transform(st_crs(hidalgo))
     coordenadas = sf::st_coordinates(df)
     print(coordenadas)
+    T.GC = T.GC_selec()
     tiempo_zona = accCost(T.GC, coordenadas)
     print(tiempo_zona)
     raster::crs(tiempo_zona) = crs(hidalgo)

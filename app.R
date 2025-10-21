@@ -27,6 +27,9 @@ library(shinyWidgets)
 
 ### Carga de previos
 #source("Previos.R")
+
+# Cuando realizamos el archivo, cuando pasamos a ver a mobil se debe colocar que el mapa abarque el 60% verticalmente, esta pendiente.
+
 source("Codigos/Previo_general.R")
 
 T.GC_caminando = readRDS("Output/T.GC_caminando.rds")

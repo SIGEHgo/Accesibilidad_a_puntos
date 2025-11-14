@@ -24,6 +24,7 @@ library(waiter)
 library(leaflet.extras)
 library(leaflet.extras2)
 library(shinyWidgets)
+library(leafem)
 
 ### Carga de previos
 #source("Previos.R")
@@ -419,7 +420,7 @@ server <- function(input, output, session) {
       addTiles() |>
       addPolygons(data = mun, color = "black", fillColor = "black", fillOpacity = 0.1, weight = 1,
                   label = paste0("Municipio: ", mun$NOM_MUN), group = "Hidalgo"
-      ) 
+      ) |> addLogo(img = "https://raw.githubusercontent.com/Eduardo-Alanis-Garcia/Js/main/Planeacion_guinda2.png", position = "bottomleft", width = 250, height = 108)
   })
   
   # Inicializa siempre
@@ -811,3 +812,6 @@ server <- function(input, output, session) {
 }
 
 shinyApp(ui, server)
+
+
+
